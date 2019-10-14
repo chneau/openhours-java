@@ -40,3 +40,6 @@ hs_err_pid*
 .classpath
 .project
 .settings
+.vscode
+main.java
+Main.java
