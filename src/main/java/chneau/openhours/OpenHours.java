@@ -9,7 +9,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
-public class OpenHours {
+public final class OpenHours {
     private static final Map<String, Integer> weekDays =
             Map.ofEntries(
                     Map.entry("su", 0),
