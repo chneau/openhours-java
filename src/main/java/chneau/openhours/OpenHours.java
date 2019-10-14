@@ -23,13 +23,13 @@ public class OpenHours {
                     Map.entry("fr", 5),
                     Map.entry("sa", 6));
 
-    private final ArrayList<LocalDateTime> x = new ArrayList<>();
+    private final List<LocalDateTime> x = new ArrayList<>();
 
     private static String clean(String str) {
         return str.trim().toLowerCase().replaceAll(" ,", ",").replaceAll(", ", ",");
     }
 
-    private static ArrayList<Integer> simplifyDays(String input) {
+    private static List<Integer> simplifyDays(String input) {
         var days = new HashSet<Integer>();
         for (String str : input.split(",")) {
             var strLen = str.length();
@@ -154,13 +154,13 @@ public class OpenHours {
         }
     }
 
-    public Boolean match(LocalDateTime ldt) {
+    public boolean match(LocalDateTime ldt) {
         var t = newDateFromLDT(ldt);
         var i = matchIndex(t);
         return i % 2 == 1;
     }
 
-    private Integer matchIndex(LocalDateTime ldt) {
+    private int matchIndex(LocalDateTime ldt) {
         var i = 0;
         for (; i < x.size(); i++) {
             if (x.get(i).isAfter(ldt)) {
