@@ -1,0 +1,19 @@
+plugins {
+    id 'java-library'
+    id "com.diffplug.gradle.spotless" version "3.25.0"
+}
+
+repositories {
+    jcenter()
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.12'
+}
+
+spotless {
+    java {
+        googleJavaFormat().aosp()
+    }
+}
+
