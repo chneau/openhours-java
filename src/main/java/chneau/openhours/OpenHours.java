@@ -4,8 +4,7 @@
 package chneau.openhours;
 
 import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
+import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -66,9 +65,44 @@ public class OpenHours {
         return simple;
     }
 
-    private static LocalDateTime newDate(Integer day, LocalTime hms) {
-        return LocalDateTime.of(2017, 1, day, hms.getHour(), hms.getMinute());
+    /**
+     * this is needed because hour can be 24, which is handled in newDate
+     * @param input
+     * @return
+     */
+    private static SimpleEntry<Integer, Integer> simplifyHours(String input) {
+        var strs = input.split(":");
+        if (strs.length != 2) {
+            return null;
+        }
+        return new SimpleEntry<>(Integer.valueOf(strs[0]), Integer.valueOf(strs[1]));
     }
+
+    /**
+     * Set at 2017/01, because it starts a monday
+     * @param day
+     * @param hour
+     * @param minute
+     * @return
+     */
+    private static LocalDateTime newDate(Integer day, Integer hour, Integer minute) {
+        if (hour == 24) {
+            ++day;
+            hour = 0;
+        }
+        return LocalDateTime.of(2017, 1, day + 1, hour, minute);
+    }
+
+    /**
+     * Offset a time
+     * @param other
+     * @return
+     */
+    private static LocalDateTime newDateFromLDT(LocalDateTime other) {
+        return newDate(other.getDayOfWeek().getValue(), other.getHour(), other.getMinute());
+    }
+
+
 
     private void buildTimes(String input) {
         var inputLen = input.length();
@@ -83,11 +117,11 @@ public class OpenHours {
             var days = simplifyDays(strs[0]);
             for (String s : strs[1].split(",")) {
                 var times = s.split("-");
-                var from = LocalTime.parse(times[0] + ":00", DateTimeFormatter.ISO_TIME);
-                var to = LocalTime.parse(times[1] + ":00", DateTimeFormatter.ISO_TIME);
+                var from = simplifyHours(times[0]);
+                var to = simplifyHours(times[1]);
                 for (Integer day : days) {
-                    this.x.add(newDate(day, from));
-                    this.x.add(newDate(day, to));
+                    this.x.add(newDate(day, from.getKey(),from.getValue()));
+                    this.x.add(newDate(day, to.getKey(),to.getValue()));
                 }
             }
         }
@@ -118,6 +152,22 @@ public class OpenHours {
                 break;
             }
         }
+    }
+
+    public Boolean match(LocalDateTime ldt) {
+        var t = newDateFromLDT(ldt);
+        var i = matchIndex(t);
+        return i % 2 == 1;
+    }
+
+    private Integer matchIndex(LocalDateTime ldt) {
+        var i = 0;
+        for (; i < x.size(); i++) {
+            if (x.get(i).isAfter(ldt)) {
+                break;
+            }
+        }
+        return i;
     }
 
     public OpenHours(String input) {
