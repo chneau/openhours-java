@@ -3,14 +3,14 @@
  */
 package chneau.openhours;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
 public class OpenHoursTest {
     @Test
     public void testSomeLibraryMethod() {
-        OpenHours classUnderTest = new OpenHours();
+        OpenHours classUnderTest = new OpenHours("");
         assertTrue("someLibraryMethod should return 'true'", classUnderTest.someLibraryMethod());
     }
 }

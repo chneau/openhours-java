@@ -3,7 +3,129 @@
  */
 package chneau.openhours;
 
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+
 public class OpenHours {
+    private static final Map<String, Integer> weekDays =
+            Map.ofEntries(
+                    Map.entry("su", 0),
+                    Map.entry("mo", 1),
+                    Map.entry("tu", 2),
+                    Map.entry("we", 3),
+                    Map.entry("th", 4),
+                    Map.entry("fr", 5),
+                    Map.entry("sa", 6));
+
+    private final ArrayList<LocalDateTime> x = new ArrayList<>();
+
+    private static String clean(String str) {
+        return str.trim().toLowerCase().replaceAll(" ,", ",").replaceAll(", ", ",");
+    }
+
+    private static ArrayList<Integer> simplifyDays(String input) {
+        var days = new HashSet<Integer>();
+        for (String str : input.split(",")) {
+            var strLen = str.length();
+            switch (strLen) {
+                case 2: // "mo"
+                    if (OpenHours.weekDays.containsKey(str)) {
+                        days.add((OpenHours.weekDays.get(str)));
+                    }
+                    break;
+                case 5: // "tu-fr"
+                    var strs = str.split("-");
+                    if (!OpenHours.weekDays.containsKey(strs[0])) {
+                        break;
+                    }
+                    var from = OpenHours.weekDays.get(strs[0]);
+                    if (!OpenHours.weekDays.containsKey(strs[1])) {
+                        break;
+                    }
+                    var to = OpenHours.weekDays.get(strs[1]);
+                    if (to < from) {
+                        to += 7;
+                    }
+                    for (int i = from; i <= to; i++) {
+                        days.add(i % 7);
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+        var simple = new ArrayList<Integer>(days);
+        Collections.sort(simple);
+        return simple;
+    }
+
+    private static LocalDateTime newDate(Integer day, LocalTime hms) {
+        return LocalDateTime.of(2017, 1, day, hms.getHour(), hms.getMinute());
+    }
+
+    private void buildTimes(String input) {
+        var inputLen = input.length();
+        if (inputLen > 0 && input.charAt(inputLen - 1) == ';') {
+            input = input.substring(0, inputLen - 1);
+        }
+        if (input == "") {
+            input = "su-sa 00:00-24:00";
+        }
+        for (String str : clean(input).split(";")) {
+            var strs = str.split("\\s+");
+            var days = simplifyDays(strs[0]);
+            for (String s : strs[1].split(",")) {
+                var times = s.split("-");
+                var from = LocalTime.parse(times[0] + ":00", DateTimeFormatter.ISO_TIME);
+                var to = LocalTime.parse(times[1] + ":00", DateTimeFormatter.ISO_TIME);
+                for (Integer day : days) {
+                    this.x.add(newDate(day, from));
+                    this.x.add(newDate(day, to));
+                }
+            }
+        }
+    }
+
+    private List<LocalDateTime> merge4(LocalDateTime... dateTimes) {
+        for (int i = 0; i < dateTimes.length; i++) {
+            if (dateTimes[i].isAfter(dateTimes[i + 1]) || dateTimes[i].equals(dateTimes[i + 1])) {
+                Arrays.sort(dateTimes);
+                return List.of(dateTimes[0], dateTimes[dateTimes.length - 1]);
+            }
+        }
+        return null;
+    }
+
+    private void merge() {
+        Collections.sort(x);
+        for (int i = 0; i < x.size(); i += 2) {
+            for (int j = i + 2; j < x.size(); j += 2) {
+                var res = merge4(x.get(i), x.get(i + 1), x.get(j), x.get(j + 1));
+                if (res == null) {
+                    continue;
+                }
+                x.set(i, res.get(0));
+                x.set(i + 1, res.get(1));
+                x.remove(j);
+                x.remove(j);
+                break;
+            }
+        }
+    }
+
+    public OpenHours(String input) {
+        super();
+        buildTimes(input);
+        merge();
+    }
+
     public boolean someLibraryMethod() {
         return true;
     }
