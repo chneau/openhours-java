@@ -109,7 +109,7 @@ public final class OpenHours {
     }
 
     private List<LocalDateTime> merge4(LocalDateTime... dateTimes) {
-        for (int i = 0; i < dateTimes.length; i++) {
+        for (int i = 0; i < dateTimes.length - 1; i++) {
             if (dateTimes[i].isAfter(dateTimes[i + 1]) || dateTimes[i].equals(dateTimes[i + 1])) {
                 Arrays.sort(dateTimes);
                 return List.of(dateTimes[0], dateTimes[dateTimes.length - 1]);
