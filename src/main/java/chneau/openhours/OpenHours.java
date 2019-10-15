@@ -129,7 +129,9 @@ public final class OpenHours {
     }
 
     private void merge() {
-        Collections.sort(ldts);
+        Collections.sort(ldts, (LocalDateTime i, LocalDateTime j) -> {
+            return i.getDayOfMonth() - j.getDayOfMonth();
+        });
         for (int i = 0; i < ldts.size(); i += 2) {
             for (int j = i + 2; j < ldts.size(); j += 2) {
                 var res = merge4(ldts.get(i), ldts.get(i + 1), ldts.get(j), ldts.get(j + 1));
@@ -140,6 +142,7 @@ public final class OpenHours {
                 ldts.set(i + 1, res.get(1));
                 ldts.remove(j);
                 ldts.remove(j);
+                i -= 2;
                 break;
             }
         }

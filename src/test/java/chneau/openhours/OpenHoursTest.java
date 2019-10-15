@@ -164,13 +164,6 @@ public class OpenHoursTest {
     @Test
     public void testNextdur() {
         var oh = OpenHours.parse("mo 08:00-18:00");
-        // {"1 hour before start", time.Date(2019, 3, 4, 7, 0, 0, 0, l), false, time.Hour},
-        // {"at start", time.Date(2019, 3, 4, 8, 0, 0, 0, l), true, 10 * time.Hour},
-        // {"1 hour after start", time.Date(2019, 3, 4, 9, 0, 0, 0, l), true, 9 * time.Hour},
-        // {"1 hour before end", time.Date(2019, 3, 4, 17, 0, 0, 0, l), true, time.Hour},
-        // {"at end", time.Date(2019, 3, 4, 18, 0, 0, 0, l), false, time.Hour*24*7 - time.Hour*10},
-        // {"1 day after start (closed)", time.Date(2019, 3, 5, 8, 0, 0, 0, l), false, time.Hour *
-        // 24 * 6},
         assertEquals("1 hour before start", Duration.ofHours(1), oh.nextDur(LocalDateTime.of(2019, 3, 4, 7, 0)));
         assertEquals(false, oh.match(LocalDateTime.of(2019, 3, 4, 7, 0)));
         assertEquals("at start", Duration.ofHours(10), oh.nextDur(LocalDateTime.of(2019, 3, 4, 8, 0)));
@@ -188,6 +181,7 @@ public class OpenHoursTest {
 
     @Test
     public void testParse() {
+        assertEquals("none", OpenHours.parse("su-sa 00:00-24:00").ldts, OpenHours.parse("").ldts);
         assertEquals("order on same sentense", OpenHours.parse("mo,tu 10:00-11:00").ldts, OpenHours.parse("tu,mo 10:00-11:00").ldts);
         assertEquals("order on different sentenses", OpenHours.parse("mo 10:00-11:00;tu 10:00-12:00").ldts, OpenHours.parse("tu 10:00-12:00;mo 10:00-11:00").ldts);
         assertEquals("complex = simple 1", OpenHours.parse("su-sa 00:00-12:00,12:00-24:00").ldts, OpenHours.parse("").ldts);
@@ -198,5 +192,22 @@ public class OpenHoursTest {
         assertEquals("weird times in different sentence", OpenHours.parse("mo-fr 00:00-15:00;mo-fr 10:00-24:00").ldts, OpenHours.parse("mo-fr 00:00-24:00").ldts);
         assertEquals("weird times in different sentence contained", OpenHours.parse("mo-fr 10:00-15:00;mo-fr 00:00-24:00").ldts, OpenHours.parse("mo-fr 00:00-24:00").ldts);
         assertEquals("total chaos", OpenHours.parse("tu-fr 10:00-15:00;mo 08:00-09:00;mo-fr 00:00-24:00").ldts, OpenHours.parse("mo-fr 00:00-24:00").ldts);
+    }
+
+    @Test
+    public void testWhen() {
+		// {"at start of open and have time", New("mo 10:00-15:00", l), args{time.Date(2019, 3, 11, 10, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 11, 10, 0, 0, 0, l)},
+		// {"before start of open and have time", New("mo 10:00-15:00", l), args{time.Date(2019, 3, 11, 9, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 11, 10, 0, 0, 0, l)},
+		// {"at end of open and have time", New("mo 10:00-15:00", l), args{time.Date(2019, 3, 11, 15, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 18, 10, 0, 0, 0, l)},
+		// {"after end of open and have time", New("mo 10:00-15:00", l), args{time.Date(2019, 3, 11, 16, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 18, 10, 0, 0, 0, l)},
+		// {"between open and have time", New("mo 10:00-15:00", l), args{time.Date(2019, 3, 11, 11, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 11, 11, 0, 0, 0, l)},
+		// {"between open and no time", New("mo 10:00-15:00", l), args{time.Date(2019, 3, 11, 14, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 18, 10, 0, 0, 0, l)},
+		// {"no time", New("mo 10:00-11:00", l), args{time.Date(2019, 3, 11, 14, 0, 0, 0, l), time.Hour * 4}, nil},
+		// {"at start of open and have time +fri", New("mo 10:00-15:00;fr 08:00-14:00", l), args{time.Date(2019, 3, 11, 10, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 11, 10, 0, 0, 0, l)},
+		// {"before start of open and have time +fri", New("mo 10:00-15:00;fr 08:00-14:00", l), args{time.Date(2019, 3, 11, 9, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 11, 10, 0, 0, 0, l)},
+		// {"at end of open and have time +fri", New("mo 10:00-15:00;fr 08:00-14:00", l), args{time.Date(2019, 3, 11, 15, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 15, 8, 0, 0, 0, l)},
+		// {"after end of open and have time +fri", New("mo 10:00-15:00;fr 08:00-14:00", l), args{time.Date(2019, 3, 11, 16, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 15, 8, 0, 0, 0, l)},
+		// {"between open and have time +fri", New("mo 10:00-15:00;fr 08:00-14:00", l), args{time.Date(2019, 3, 11, 11, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 11, 11, 0, 0, 0, l)},
+		// {"between open and no time +fri", New("mo 10:00-15:00;fr 08:00-14:00", l), args{time.Date(2019, 3, 11, 14, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 15, 8, 0, 0, 0, l)},
     }
 }
