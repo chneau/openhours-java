@@ -14,7 +14,7 @@ public final class OpenHours {
     private static final Map<String, Integer> weekDays = Map.ofEntries(Map.entry("su", 0), Map.entry("mo", 1),
             Map.entry("tu", 2), Map.entry("we", 3), Map.entry("th", 4), Map.entry("fr", 5), Map.entry("sa", 6));
 
-    private final List<LocalDateTime> x = new ArrayList<>();
+    private final List<LocalDateTime> ldts = new ArrayList<>();
 
     private static String clean(String str) {
         return str.trim().toLowerCase().replaceAll(" ,", ",").replaceAll(", ", ",");
@@ -95,8 +95,8 @@ public final class OpenHours {
                 var from = simplifyHours(times[0]);
                 var to = simplifyHours(times[1]);
                 for (Integer day : days) {
-                    this.x.add(newDate(day, from.getKey(), from.getValue()));
-                    this.x.add(newDate(day, to.getKey(), to.getValue()));
+                    this.ldts.add(newDate(day, from.getKey(), from.getValue()));
+                    this.ldts.add(newDate(day, to.getKey(), to.getValue()));
                 }
             }
         }
@@ -113,17 +113,17 @@ public final class OpenHours {
     }
 
     private void merge() {
-        Collections.sort(x);
-        for (int i = 0; i < x.size(); i += 2) {
-            for (int j = i + 2; j < x.size(); j += 2) {
-                var res = merge4(x.get(i), x.get(i + 1), x.get(j), x.get(j + 1));
+        Collections.sort(ldts);
+        for (int i = 0; i < ldts.size(); i += 2) {
+            for (int j = i + 2; j < ldts.size(); j += 2) {
+                var res = merge4(ldts.get(i), ldts.get(i + 1), ldts.get(j), ldts.get(j + 1));
                 if (res == null) {
                     continue;
                 }
-                x.set(i, res.get(0));
-                x.set(i + 1, res.get(1));
-                x.remove(j);
-                x.remove(j);
+                ldts.set(i, res.get(0));
+                ldts.set(i + 1, res.get(1));
+                ldts.remove(j);
+                ldts.remove(j);
                 break;
             }
         }
@@ -138,10 +138,10 @@ public final class OpenHours {
     public Duration nextDur(LocalDateTime ldt) {
         var x = newDateFromLDT(ldt);
         var i = matchIndex(x);
-        if (i == this.x.size()) {
+        if (i == this.ldts.size()) {
             i = 0;
         }
-        var xi = this.x.get(i);
+        var xi = this.ldts.get(i);
         if (x.isAfter(xi)) {
             xi = xi.plusDays(7);
         }
@@ -154,7 +154,7 @@ public final class OpenHours {
         LocalDateTime found = null;
         if (i % 2 == 1) {
             var newO = x.plus(d);
-            if (newO.isBefore(this.x.get(i)) || newO.equals(this.x.get(i))) {
+            if (newO.isBefore(this.ldts.get(i)) || newO.equals(this.ldts.get(i))) {
                 found = x;
             } else {
                 i += 2;
@@ -162,11 +162,11 @@ public final class OpenHours {
         } else {
             ++i;
         }
-        for (int max = i + this.x.size(); i < max && found == null; i += 2) {
-            var newI = i % this.x.size();
-            var newO = this.x.get(newI - 1).plus(d);
-            if (newO.isBefore(this.x.get(newI)) || newO.equals(this.x.get(newI))) {
-                found = this.x.get(newI - 1);
+        for (int max = i + this.ldts.size(); i < max && found == null; i += 2) {
+            var newI = i % this.ldts.size();
+            var newO = this.ldts.get(newI - 1).plus(d);
+            if (newO.isBefore(this.ldts.get(newI)) || newO.equals(this.ldts.get(newI))) {
+                found = this.ldts.get(newI - 1);
             }
         }
         if (found == null) {
@@ -185,8 +185,8 @@ public final class OpenHours {
 
     private int matchIndex(LocalDateTime ldt) {
         var i = 0;
-        for (; i < x.size(); i++) {
-            if (x.get(i).isAfter(ldt)) {
+        for (; i < ldts.size(); i++) {
+            if (ldts.get(i).isAfter(ldt)) {
                 break;
             }
         }
