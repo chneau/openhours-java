@@ -66,7 +66,7 @@ public final class OpenHours {
     private static SimpleEntry<Integer, Integer> simplifyHours(String input) {
         var strs = input.split(":");
         if (strs.length != 2) {
-            throw new IllegalArgumentException("input mal formed");
+            throw new IllegalArgumentException("input malformed");
         }
         return new SimpleEntry<>(Integer.valueOf(strs[0]), Integer.valueOf(strs[1]));
     }
