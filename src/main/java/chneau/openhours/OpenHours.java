@@ -161,7 +161,7 @@ public final class OpenHours {
         if (x.isAfter(xi)) {
             xi = xi.plusDays(7);
         }
-        return Duration.between(xi, x);
+        return Duration.between(x, xi);
     }
 
     public LocalDateTime when(LocalDateTime ldt, Duration d) {

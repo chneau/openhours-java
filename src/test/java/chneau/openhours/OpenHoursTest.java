@@ -5,10 +5,10 @@ package chneau.openhours;
 
 import static org.junit.Assert.assertEquals;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.AbstractMap.SimpleEntry;
 import java.util.Arrays;
-
 import org.junit.Test;
 
 public class OpenHoursTest {
@@ -114,9 +114,15 @@ public class OpenHoursTest {
     @Test
     public void testMatchSimple() {
         var oh = OpenHours.parse("mo 08:00-18:00");
-        assertEquals("special case start, must be true", true, oh.match(LocalDateTime.of(2019, 3, 4, 8, 0)));
+        assertEquals(
+                "special case start, must be true",
+                true,
+                oh.match(LocalDateTime.of(2019, 3, 4, 8, 0)));
         assertEquals("must be true", true, oh.match(LocalDateTime.of(2019, 3, 4, 17, 59)));
-        assertEquals("special case end, must be false", false, oh.match(LocalDateTime.of(2019, 3, 4, 18, 0)));
+        assertEquals(
+                "special case end, must be false",
+                false,
+                oh.match(LocalDateTime.of(2019, 3, 4, 18, 0)));
         assertEquals("must be false", false, oh.match(LocalDateTime.of(2019, 3, 4, 7, 0)));
         assertEquals("must be false other", false, oh.match(LocalDateTime.of(2019, 3, 4, 19, 0)));
     }
@@ -124,17 +130,68 @@ public class OpenHoursTest {
     @Test
     public void testMatchComplex() {
         var oh = OpenHours.parse("mo 08:00-12:00,13:00-17:00");
-        assertEquals("special case start, must be true", true, oh.match(LocalDateTime.of(2019, 3, 4, 8, 0)));
+        assertEquals(
+                "special case start, must be true",
+                true,
+                oh.match(LocalDateTime.of(2019, 3, 4, 8, 0)));
         assertEquals("must be true", true, oh.match(LocalDateTime.of(2019, 3, 4, 9, 0)));
-        assertEquals("special case start, must be true 2", true, oh.match(LocalDateTime.of(2019, 3, 4, 13, 0)));
+        assertEquals(
+                "special case start, must be true 2",
+                true,
+                oh.match(LocalDateTime.of(2019, 3, 4, 13, 0)));
         assertEquals("must be true 2", true, oh.match(LocalDateTime.of(2019, 3, 4, 15, 0)));
-
-        assertEquals("must be false between", false, oh.match(LocalDateTime.of(2019, 3, 4, 12, 30)));
+        assertEquals(
+                "must be false between", false, oh.match(LocalDateTime.of(2019, 3, 4, 12, 30)));
         assertEquals("must be false 2", false, oh.match(LocalDateTime.of(2019, 3, 4, 17, 59)));
-        assertEquals("special case end, must be false", false, oh.match(LocalDateTime.of(2019, 3, 4, 17, 00)));
-        assertEquals("special case end, must be false 2", false, oh.match(LocalDateTime.of(2019, 3, 4, 12, 00)));
+        assertEquals(
+                "special case end, must be false",
+                false,
+                oh.match(LocalDateTime.of(2019, 3, 4, 17, 00)));
+        assertEquals(
+                "special case end, must be false 2",
+                false,
+                oh.match(LocalDateTime.of(2019, 3, 4, 12, 00)));
+        assertEquals("must be false 3", false, oh.match(LocalDateTime.of(2019, 3, 4, 7, 0)));
+        assertEquals("must be false 4", false, oh.match(LocalDateTime.of(2019, 3, 4, 19, 0)));
+    }
 
-		// {time.Date(2019, 3, 4, 7, 0, 0, 0, l), false},
-		// {time.Date(2019, 3, 4, 19, 0, 0, 0, l), false},
+    @Test
+    public void testNextdur() {
+        var oh = OpenHours.parse("mo 08:00-18:00");
+        // {"1 hour before start", time.Date(2019, 3, 4, 7, 0, 0, 0, l), false, time.Hour},
+        // {"at start", time.Date(2019, 3, 4, 8, 0, 0, 0, l), true, 10 * time.Hour},
+        // {"1 hour after start", time.Date(2019, 3, 4, 9, 0, 0, 0, l), true, 9 * time.Hour},
+        // {"1 hour before end", time.Date(2019, 3, 4, 17, 0, 0, 0, l), true, time.Hour},
+        // {"at end", time.Date(2019, 3, 4, 18, 0, 0, 0, l), false, time.Hour*24*7 - time.Hour*10},
+        // {"1 day after start (closed)", time.Date(2019, 3, 5, 8, 0, 0, 0, l), false, time.Hour *
+        // 24 * 6},
+        assertEquals(
+                "1 hour before start",
+                Duration.ofHours(1),
+                oh.nextDur(LocalDateTime.of(2019, 3, 4, 7, 0)));
+        assertEquals(false, oh.match(LocalDateTime.of(2019, 3, 4, 7, 0)));
+        assertEquals(
+                "at start", Duration.ofHours(10), oh.nextDur(LocalDateTime.of(2019, 3, 4, 8, 0)));
+        assertEquals(true, oh.match(LocalDateTime.of(2019, 3, 4, 8, 0)));
+        assertEquals(
+                "1 hour after start",
+                Duration.ofHours(9),
+                oh.nextDur(LocalDateTime.of(2019, 3, 4, 9, 0)));
+        assertEquals(true, oh.match(LocalDateTime.of(2019, 3, 4, 9, 0)));
+        assertEquals(
+                "1 hour before end",
+                Duration.ofHours(1),
+                oh.nextDur(LocalDateTime.of(2019, 3, 4, 17, 0)));
+        assertEquals(true, oh.match(LocalDateTime.of(2019, 3, 4, 17, 0)));
+        assertEquals(
+                "at end",
+                Duration.ofHours(24 * 7 - 10),
+                oh.nextDur(LocalDateTime.of(2019, 3, 4, 18, 0)));
+        assertEquals(false, oh.match(LocalDateTime.of(2019, 3, 4, 18, 0)));
+        assertEquals(
+                "1 day after start (closed)",
+                Duration.ofHours(24 * 6),
+                oh.nextDur(LocalDateTime.of(2019, 3, 5, 8, 0)));
+        assertEquals(false, oh.match(LocalDateTime.of(2019, 3, 5, 0, 0)));
     }
 }
