@@ -129,9 +129,11 @@ public final class OpenHours {
     }
 
     private void merge() {
-        Collections.sort(ldts, (LocalDateTime i, LocalDateTime j) -> {
-            return i.getDayOfMonth() - j.getDayOfMonth();
-        });
+        Collections.sort(
+                ldts,
+                (LocalDateTime i, LocalDateTime j) -> {
+                    return i.getDayOfMonth() - j.getDayOfMonth();
+                });
         for (int i = 0; i < ldts.size(); i += 2) {
             for (int j = i + 2; j < ldts.size(); j += 2) {
                 var res = merge4(ldts.get(i), ldts.get(i + 1), ldts.get(j), ldts.get(j + 1));
@@ -194,7 +196,7 @@ public final class OpenHours {
         if (x.isAfter(found)) {
             found = found.plusDays(7);
         }
-        return found.plus(Duration.between(x,ldt));
+        return found.plus(Duration.between(x, ldt));
     }
 
     public LocalDateTime nextDate(LocalDateTime ldt) {

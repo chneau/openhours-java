@@ -9,7 +9,6 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.AbstractMap.SimpleEntry;
 import java.util.Arrays;
-
 import org.junit.Test;
 
 public class OpenHoursTest {
@@ -164,17 +163,32 @@ public class OpenHoursTest {
     @Test
     public void testNextdur() {
         var oh = OpenHours.parse("mo 08:00-18:00");
-        assertEquals("1 hour before start", Duration.ofHours(1), oh.nextDur(LocalDateTime.of(2019, 3, 4, 7, 0)));
+        assertEquals(
+                "1 hour before start",
+                Duration.ofHours(1),
+                oh.nextDur(LocalDateTime.of(2019, 3, 4, 7, 0)));
         assertEquals(false, oh.match(LocalDateTime.of(2019, 3, 4, 7, 0)));
-        assertEquals("at start", Duration.ofHours(10), oh.nextDur(LocalDateTime.of(2019, 3, 4, 8, 0)));
+        assertEquals(
+                "at start", Duration.ofHours(10), oh.nextDur(LocalDateTime.of(2019, 3, 4, 8, 0)));
         assertEquals(true, oh.match(LocalDateTime.of(2019, 3, 4, 8, 0)));
-        assertEquals("1 hour after start", Duration.ofHours(9), oh.nextDur(LocalDateTime.of(2019, 3, 4, 9, 0)));
+        assertEquals(
+                "1 hour after start",
+                Duration.ofHours(9),
+                oh.nextDur(LocalDateTime.of(2019, 3, 4, 9, 0)));
         assertEquals(true, oh.match(LocalDateTime.of(2019, 3, 4, 9, 0)));
-        assertEquals("1 hour before end", Duration.ofHours(1), oh.nextDur(LocalDateTime.of(2019, 3, 4, 17, 0)));
+        assertEquals(
+                "1 hour before end",
+                Duration.ofHours(1),
+                oh.nextDur(LocalDateTime.of(2019, 3, 4, 17, 0)));
         assertEquals(true, oh.match(LocalDateTime.of(2019, 3, 4, 17, 0)));
-        assertEquals("at end", Duration.ofHours(24 * 7 - 10), oh.nextDur(LocalDateTime.of(2019, 3, 4, 18, 0)));
+        assertEquals(
+                "at end",
+                Duration.ofHours(24 * 7 - 10),
+                oh.nextDur(LocalDateTime.of(2019, 3, 4, 18, 0)));
         assertEquals(false, oh.match(LocalDateTime.of(2019, 3, 4, 18, 0)));
-        assertEquals("1 day after start (closed)", Duration.ofHours(24 * 6),
+        assertEquals(
+                "1 day after start (closed)",
+                Duration.ofHours(24 * 6),
                 oh.nextDur(LocalDateTime.of(2019, 3, 5, 8, 0)));
         assertEquals(false, oh.match(LocalDateTime.of(2019, 3, 5, 0, 0)));
     }
@@ -182,34 +196,117 @@ public class OpenHoursTest {
     @Test
     public void testParse() {
         assertEquals("none", OpenHours.parse("su-sa 00:00-24:00").ldts, OpenHours.parse("").ldts);
-        assertEquals("order on same sentense", OpenHours.parse("mo,tu 10:00-11:00").ldts, OpenHours.parse("tu,mo 10:00-11:00").ldts);
-        assertEquals("order on different sentenses", OpenHours.parse("mo 10:00-11:00;tu 10:00-12:00").ldts, OpenHours.parse("tu 10:00-12:00;mo 10:00-11:00").ldts);
-        assertEquals("complex = simple 1", OpenHours.parse("su-sa 00:00-12:00,12:00-24:00").ldts, OpenHours.parse("").ldts);
-        assertEquals("complex = simple 2", OpenHours.parse("su-sa 00:00-12:00;su-sa 12:00-24:00").ldts, OpenHours.parse("").ldts);
-        assertEquals("time windows order does not matter anymore", OpenHours.parse("mo-su 00:00-24:00").ldts, OpenHours.parse("").ldts);
-        assertEquals("weird times in same sentence", OpenHours.parse("mo-fr 00:00-15:00,10:00-24:00").ldts, OpenHours.parse("mo-fr 00:00-24:00").ldts);
-        assertEquals("weird times in same sentence one contained", OpenHours.parse("mo-fr 10:00-15:00,00:00-24:00").ldts, OpenHours.parse("mo-fr 00:00-24:00").ldts);
-        assertEquals("weird times in different sentence", OpenHours.parse("mo-fr 00:00-15:00;mo-fr 10:00-24:00").ldts, OpenHours.parse("mo-fr 00:00-24:00").ldts);
-        assertEquals("weird times in different sentence contained", OpenHours.parse("mo-fr 10:00-15:00;mo-fr 00:00-24:00").ldts, OpenHours.parse("mo-fr 00:00-24:00").ldts);
-        assertEquals("total chaos", OpenHours.parse("tu-fr 10:00-15:00;mo 08:00-09:00;mo-fr 00:00-24:00").ldts, OpenHours.parse("mo-fr 00:00-24:00").ldts);
+        assertEquals(
+                "order on same sentense",
+                OpenHours.parse("mo,tu 10:00-11:00").ldts,
+                OpenHours.parse("tu,mo 10:00-11:00").ldts);
+        assertEquals(
+                "order on different sentenses",
+                OpenHours.parse("mo 10:00-11:00;tu 10:00-12:00").ldts,
+                OpenHours.parse("tu 10:00-12:00;mo 10:00-11:00").ldts);
+        assertEquals(
+                "complex = simple 1",
+                OpenHours.parse("su-sa 00:00-12:00,12:00-24:00").ldts,
+                OpenHours.parse("").ldts);
+        assertEquals(
+                "complex = simple 2",
+                OpenHours.parse("su-sa 00:00-12:00;su-sa 12:00-24:00").ldts,
+                OpenHours.parse("").ldts);
+        assertEquals(
+                "time windows order does not matter anymore",
+                OpenHours.parse("mo-su 00:00-24:00").ldts,
+                OpenHours.parse("").ldts);
+        assertEquals(
+                "weird times in same sentence",
+                OpenHours.parse("mo-fr 00:00-15:00,10:00-24:00").ldts,
+                OpenHours.parse("mo-fr 00:00-24:00").ldts);
+        assertEquals(
+                "weird times in same sentence one contained",
+                OpenHours.parse("mo-fr 10:00-15:00,00:00-24:00").ldts,
+                OpenHours.parse("mo-fr 00:00-24:00").ldts);
+        assertEquals(
+                "weird times in different sentence",
+                OpenHours.parse("mo-fr 00:00-15:00;mo-fr 10:00-24:00").ldts,
+                OpenHours.parse("mo-fr 00:00-24:00").ldts);
+        assertEquals(
+                "weird times in different sentence contained",
+                OpenHours.parse("mo-fr 10:00-15:00;mo-fr 00:00-24:00").ldts,
+                OpenHours.parse("mo-fr 00:00-24:00").ldts);
+        assertEquals(
+                "total chaos",
+                OpenHours.parse("tu-fr 10:00-15:00;mo 08:00-09:00;mo-fr 00:00-24:00").ldts,
+                OpenHours.parse("mo-fr 00:00-24:00").ldts);
     }
 
     @Test
     public void testWhen() {
-		// {"between open and no time +fri", New("mo 10:00-15:00;fr 08:00-14:00", l), args{time.Date(2019, 3, 11, 14, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 15, 8, 0, 0, 0, l)},
-        assertEquals("at start of open and have time", LocalDateTime.of(2019, 3, 11, 10, 0), OpenHours.parse("mo-fr 00:00-24:00").when(LocalDateTime.of(2019, 3, 11, 10, 0), Duration.ofHours(4)));
-        assertEquals("before start of open and have time", LocalDateTime.of(2019, 3, 11, 10, 0), OpenHours.parse("mo 10:00-15:00").when(LocalDateTime.of(2019, 3, 11, 9, 0), Duration.ofHours(4)));
-        assertEquals("at end of open and have time", LocalDateTime.of(2019, 3, 18, 10, 0), OpenHours.parse("mo 10:00-15:00").when(LocalDateTime.of(2019, 3, 11, 15, 0), Duration.ofHours(4)));
-        assertEquals("after end of open and have time", LocalDateTime.of(2019, 3, 18, 10, 0), OpenHours.parse("mo 10:00-15:00").when(LocalDateTime.of(2019, 3, 11, 16, 0), Duration.ofHours(4)));
-        assertEquals("between open and have time", LocalDateTime.of(2019, 3, 11, 11, 0), OpenHours.parse("mo 10:00-15:00").when(LocalDateTime.of(2019, 3, 11, 11, 0), Duration.ofHours(4)));
-        assertEquals("between open and no time", LocalDateTime.of(2019, 3, 18, 10, 0), OpenHours.parse("mo 10:00-15:00").when(LocalDateTime.of(2019, 3, 11, 14, 0), Duration.ofHours(4)));
-        assertEquals("no time", null, OpenHours.parse("mo 10:00-11:00").when(LocalDateTime.of(2019, 3, 11, 14, 0), Duration.ofHours(4)));
-        assertEquals("at start of open and have time +fri", LocalDateTime.of(2019, 3, 11, 10, 0), OpenHours.parse("mo 10:00-15:00;fr 08:00-14:00").when(LocalDateTime.of(2019, 3, 11, 10, 0), Duration.ofHours(4)));
-        assertEquals("before start of open and have time +fri", LocalDateTime.of(2019, 3, 11, 10, 0), OpenHours.parse("mo 10:00-15:00;fr 08:00-14:00").when(LocalDateTime.of(2019, 3, 11, 9, 0), Duration.ofHours(4)));
-        assertEquals("at end of open and have time +fri", LocalDateTime.of(2019, 3, 15, 8, 0), OpenHours.parse("mo 10:00-15:00;fr 08:00-14:00").when(LocalDateTime.of(2019, 3, 15, 8, 0), Duration.ofHours(4)));
-        assertEquals("after end of open and have time +fri", LocalDateTime.of(2019, 3, 15, 8, 0), OpenHours.parse("mo 10:00-15:00;fr 08:00-14:00").when(LocalDateTime.of(2019, 3, 11, 16, 0), Duration.ofHours(4)));
-        assertEquals("between open and have time +fri", LocalDateTime.of(2019, 3, 11, 11, 0), OpenHours.parse("mo 10:00-15:00;fr 08:00-14:00").when(LocalDateTime.of(2019, 3, 11, 11, 0), Duration.ofHours(4)));
-        assertEquals("between open and no time +fri", LocalDateTime.of(2019, 3, 15, 8, 0), OpenHours.parse("mo 10:00-15:00;fr 08:00-14:00").when(LocalDateTime.of(2019, 3, 11, 14, 0), Duration.ofHours(4)));
-
+        // {"between open and no time +fri", New("mo 10:00-15:00;fr 08:00-14:00", l),
+        // args{time.Date(2019, 3, 11, 14, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 15, 8, 0, 0,
+        // 0, l)},
+        assertEquals(
+                "at start of open and have time",
+                LocalDateTime.of(2019, 3, 11, 10, 0),
+                OpenHours.parse("mo-fr 00:00-24:00")
+                        .when(LocalDateTime.of(2019, 3, 11, 10, 0), Duration.ofHours(4)));
+        assertEquals(
+                "before start of open and have time",
+                LocalDateTime.of(2019, 3, 11, 10, 0),
+                OpenHours.parse("mo 10:00-15:00")
+                        .when(LocalDateTime.of(2019, 3, 11, 9, 0), Duration.ofHours(4)));
+        assertEquals(
+                "at end of open and have time",
+                LocalDateTime.of(2019, 3, 18, 10, 0),
+                OpenHours.parse("mo 10:00-15:00")
+                        .when(LocalDateTime.of(2019, 3, 11, 15, 0), Duration.ofHours(4)));
+        assertEquals(
+                "after end of open and have time",
+                LocalDateTime.of(2019, 3, 18, 10, 0),
+                OpenHours.parse("mo 10:00-15:00")
+                        .when(LocalDateTime.of(2019, 3, 11, 16, 0), Duration.ofHours(4)));
+        assertEquals(
+                "between open and have time",
+                LocalDateTime.of(2019, 3, 11, 11, 0),
+                OpenHours.parse("mo 10:00-15:00")
+                        .when(LocalDateTime.of(2019, 3, 11, 11, 0), Duration.ofHours(4)));
+        assertEquals(
+                "between open and no time",
+                LocalDateTime.of(2019, 3, 18, 10, 0),
+                OpenHours.parse("mo 10:00-15:00")
+                        .when(LocalDateTime.of(2019, 3, 11, 14, 0), Duration.ofHours(4)));
+        assertEquals(
+                "no time",
+                null,
+                OpenHours.parse("mo 10:00-11:00")
+                        .when(LocalDateTime.of(2019, 3, 11, 14, 0), Duration.ofHours(4)));
+        assertEquals(
+                "at start of open and have time +fri",
+                LocalDateTime.of(2019, 3, 11, 10, 0),
+                OpenHours.parse("mo 10:00-15:00;fr 08:00-14:00")
+                        .when(LocalDateTime.of(2019, 3, 11, 10, 0), Duration.ofHours(4)));
+        assertEquals(
+                "before start of open and have time +fri",
+                LocalDateTime.of(2019, 3, 11, 10, 0),
+                OpenHours.parse("mo 10:00-15:00;fr 08:00-14:00")
+                        .when(LocalDateTime.of(2019, 3, 11, 9, 0), Duration.ofHours(4)));
+        assertEquals(
+                "at end of open and have time +fri",
+                LocalDateTime.of(2019, 3, 15, 8, 0),
+                OpenHours.parse("mo 10:00-15:00;fr 08:00-14:00")
+                        .when(LocalDateTime.of(2019, 3, 15, 8, 0), Duration.ofHours(4)));
+        assertEquals(
+                "after end of open and have time +fri",
+                LocalDateTime.of(2019, 3, 15, 8, 0),
+                OpenHours.parse("mo 10:00-15:00;fr 08:00-14:00")
+                        .when(LocalDateTime.of(2019, 3, 11, 16, 0), Duration.ofHours(4)));
+        assertEquals(
+                "between open and have time +fri",
+                LocalDateTime.of(2019, 3, 11, 11, 0),
+                OpenHours.parse("mo 10:00-15:00;fr 08:00-14:00")
+                        .when(LocalDateTime.of(2019, 3, 11, 11, 0), Duration.ofHours(4)));
+        assertEquals(
+                "between open and no time +fri",
+                LocalDateTime.of(2019, 3, 15, 8, 0),
+                OpenHours.parse("mo 10:00-15:00;fr 08:00-14:00")
+                        .when(LocalDateTime.of(2019, 3, 11, 14, 0), Duration.ofHours(4)));
     }
 }
