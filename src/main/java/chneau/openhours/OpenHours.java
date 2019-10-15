@@ -10,7 +10,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
-public final class OpenHours {
+public final class OpenHours implements Whenable {
     private static final Map<String, Integer> weekDays =
             Map.ofEntries(
                     Map.entry("su", 0),
