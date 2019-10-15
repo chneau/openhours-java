@@ -211,7 +211,7 @@ public final class OpenHours {
 
     private OpenHours() {}
 
-    public static final OpenHours Parse(String input) {
+    public static final OpenHours parse(String input) {
         var oh = new OpenHours();
         oh.buildTimes(input);
         oh.merge();

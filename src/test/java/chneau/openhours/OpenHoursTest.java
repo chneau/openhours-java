@@ -5,8 +5,10 @@ package chneau.openhours;
 
 import static org.junit.Assert.assertEquals;
 
+import java.time.LocalDateTime;
 import java.util.AbstractMap.SimpleEntry;
 import java.util.Arrays;
+
 import org.junit.Test;
 
 public class OpenHoursTest {
@@ -107,5 +109,32 @@ public class OpenHoursTest {
     @Test(expected = IllegalArgumentException.class)
     public void testSimplifyhours_4() {
         OpenHours.simplifyHours("33:33:33");
+    }
+
+    @Test
+    public void testMatchSimple() {
+        var oh = OpenHours.parse("mo 08:00-18:00");
+        assertEquals("special case start, must be true", true, oh.match(LocalDateTime.of(2019, 3, 4, 8, 0)));
+        assertEquals("must be true", true, oh.match(LocalDateTime.of(2019, 3, 4, 17, 59)));
+        assertEquals("special case end, must be false", false, oh.match(LocalDateTime.of(2019, 3, 4, 18, 0)));
+        assertEquals("must be false", false, oh.match(LocalDateTime.of(2019, 3, 4, 7, 0)));
+        assertEquals("must be false other", false, oh.match(LocalDateTime.of(2019, 3, 4, 19, 0)));
+    }
+
+    @Test
+    public void testMatchComplex() {
+        var oh = OpenHours.parse("mo 08:00-12:00,13:00-17:00");
+        assertEquals("special case start, must be true", true, oh.match(LocalDateTime.of(2019, 3, 4, 8, 0)));
+        assertEquals("must be true", true, oh.match(LocalDateTime.of(2019, 3, 4, 9, 0)));
+        assertEquals("special case start, must be true 2", true, oh.match(LocalDateTime.of(2019, 3, 4, 13, 0)));
+        assertEquals("must be true 2", true, oh.match(LocalDateTime.of(2019, 3, 4, 15, 0)));
+
+        assertEquals("must be false between", false, oh.match(LocalDateTime.of(2019, 3, 4, 12, 30)));
+        assertEquals("must be false 2", false, oh.match(LocalDateTime.of(2019, 3, 4, 17, 59)));
+        assertEquals("special case end, must be false", false, oh.match(LocalDateTime.of(2019, 3, 4, 17, 00)));
+        assertEquals("special case end, must be false 2", false, oh.match(LocalDateTime.of(2019, 3, 4, 12, 00)));
+
+		// {time.Date(2019, 3, 4, 7, 0, 0, 0, l), false},
+		// {time.Date(2019, 3, 4, 19, 0, 0, 0, l), false},
     }
 }
