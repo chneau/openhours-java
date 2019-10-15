@@ -21,7 +21,7 @@ public final class OpenHours {
                     Map.entry("fr", 5),
                     Map.entry("sa", 6));
 
-    private final List<LocalDateTime> ldts = new ArrayList<>();
+    final List<LocalDateTime> ldts = new ArrayList<>();
 
     static String clean(String str) {
         return String.join(" ", str.split("\\s+"))
@@ -75,7 +75,7 @@ public final class OpenHours {
         }
         var hour = Integer.valueOf(strs[0]);
         var min = Integer.valueOf(strs[1]);
-        if (hour > 24 || hour < 0 || min > 60 || min < 0 || (hour == 24 && min > 0)) {
+        if (hour > 24 || hour < 0 || min > 59 || min < 0 || (hour == 24 && min > 0)) {
             throw new IllegalArgumentException("input malformed");
         }
         return new SimpleEntry<>(hour, min);
