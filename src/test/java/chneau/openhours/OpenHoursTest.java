@@ -196,18 +196,20 @@ public class OpenHoursTest {
 
     @Test
     public void testWhen() {
-		// {"at start of open and have time", New("mo 10:00-15:00", l), args{time.Date(2019, 3, 11, 10, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 11, 10, 0, 0, 0, l)},
-		// {"before start of open and have time", New("mo 10:00-15:00", l), args{time.Date(2019, 3, 11, 9, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 11, 10, 0, 0, 0, l)},
-		// {"at end of open and have time", New("mo 10:00-15:00", l), args{time.Date(2019, 3, 11, 15, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 18, 10, 0, 0, 0, l)},
-		// {"after end of open and have time", New("mo 10:00-15:00", l), args{time.Date(2019, 3, 11, 16, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 18, 10, 0, 0, 0, l)},
-		// {"between open and have time", New("mo 10:00-15:00", l), args{time.Date(2019, 3, 11, 11, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 11, 11, 0, 0, 0, l)},
-		// {"between open and no time", New("mo 10:00-15:00", l), args{time.Date(2019, 3, 11, 14, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 18, 10, 0, 0, 0, l)},
-		// {"no time", New("mo 10:00-11:00", l), args{time.Date(2019, 3, 11, 14, 0, 0, 0, l), time.Hour * 4}, nil},
-		// {"at start of open and have time +fri", New("mo 10:00-15:00;fr 08:00-14:00", l), args{time.Date(2019, 3, 11, 10, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 11, 10, 0, 0, 0, l)},
-		// {"before start of open and have time +fri", New("mo 10:00-15:00;fr 08:00-14:00", l), args{time.Date(2019, 3, 11, 9, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 11, 10, 0, 0, 0, l)},
-		// {"at end of open and have time +fri", New("mo 10:00-15:00;fr 08:00-14:00", l), args{time.Date(2019, 3, 11, 15, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 15, 8, 0, 0, 0, l)},
-		// {"after end of open and have time +fri", New("mo 10:00-15:00;fr 08:00-14:00", l), args{time.Date(2019, 3, 11, 16, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 15, 8, 0, 0, 0, l)},
-		// {"between open and have time +fri", New("mo 10:00-15:00;fr 08:00-14:00", l), args{time.Date(2019, 3, 11, 11, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 11, 11, 0, 0, 0, l)},
 		// {"between open and no time +fri", New("mo 10:00-15:00;fr 08:00-14:00", l), args{time.Date(2019, 3, 11, 14, 0, 0, 0, l), time.Hour * 4}, pDate(2019, 3, 15, 8, 0, 0, 0, l)},
+        assertEquals("at start of open and have time", LocalDateTime.of(2019, 3, 11, 10, 0), OpenHours.parse("mo-fr 00:00-24:00").when(LocalDateTime.of(2019, 3, 11, 10, 0), Duration.ofHours(4)));
+        assertEquals("before start of open and have time", LocalDateTime.of(2019, 3, 11, 10, 0), OpenHours.parse("mo 10:00-15:00").when(LocalDateTime.of(2019, 3, 11, 9, 0), Duration.ofHours(4)));
+        assertEquals("at end of open and have time", LocalDateTime.of(2019, 3, 18, 10, 0), OpenHours.parse("mo 10:00-15:00").when(LocalDateTime.of(2019, 3, 11, 15, 0), Duration.ofHours(4)));
+        assertEquals("after end of open and have time", LocalDateTime.of(2019, 3, 18, 10, 0), OpenHours.parse("mo 10:00-15:00").when(LocalDateTime.of(2019, 3, 11, 16, 0), Duration.ofHours(4)));
+        assertEquals("between open and have time", LocalDateTime.of(2019, 3, 11, 11, 0), OpenHours.parse("mo 10:00-15:00").when(LocalDateTime.of(2019, 3, 11, 11, 0), Duration.ofHours(4)));
+        assertEquals("between open and no time", LocalDateTime.of(2019, 3, 18, 10, 0), OpenHours.parse("mo 10:00-15:00").when(LocalDateTime.of(2019, 3, 11, 14, 0), Duration.ofHours(4)));
+        assertEquals("no time", null, OpenHours.parse("mo 10:00-11:00").when(LocalDateTime.of(2019, 3, 11, 14, 0), Duration.ofHours(4)));
+        assertEquals("at start of open and have time +fri", LocalDateTime.of(2019, 3, 11, 10, 0), OpenHours.parse("mo 10:00-15:00;fr 08:00-14:00").when(LocalDateTime.of(2019, 3, 11, 10, 0), Duration.ofHours(4)));
+        assertEquals("before start of open and have time +fri", LocalDateTime.of(2019, 3, 11, 10, 0), OpenHours.parse("mo 10:00-15:00;fr 08:00-14:00").when(LocalDateTime.of(2019, 3, 11, 9, 0), Duration.ofHours(4)));
+        assertEquals("at end of open and have time +fri", LocalDateTime.of(2019, 3, 15, 8, 0), OpenHours.parse("mo 10:00-15:00;fr 08:00-14:00").when(LocalDateTime.of(2019, 3, 15, 8, 0), Duration.ofHours(4)));
+        assertEquals("after end of open and have time +fri", LocalDateTime.of(2019, 3, 15, 8, 0), OpenHours.parse("mo 10:00-15:00;fr 08:00-14:00").when(LocalDateTime.of(2019, 3, 11, 16, 0), Duration.ofHours(4)));
+        assertEquals("between open and have time +fri", LocalDateTime.of(2019, 3, 11, 11, 0), OpenHours.parse("mo 10:00-15:00;fr 08:00-14:00").when(LocalDateTime.of(2019, 3, 11, 11, 0), Duration.ofHours(4)));
+        assertEquals("between open and no time +fri", LocalDateTime.of(2019, 3, 15, 8, 0), OpenHours.parse("mo 10:00-15:00;fr 08:00-14:00").when(LocalDateTime.of(2019, 3, 11, 14, 0), Duration.ofHours(4)));
+
     }
 }

@@ -194,7 +194,7 @@ public final class OpenHours {
         if (x.isAfter(found)) {
             found = found.plusDays(7);
         }
-        return found;
+        return found.plus(Duration.between(x,ldt));
     }
 
     public LocalDateTime nextDate(LocalDateTime ldt) {
