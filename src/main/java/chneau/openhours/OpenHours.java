@@ -11,44 +11,55 @@ import java.util.List;
 import java.util.Map;
 
 public final class OpenHours {
-    private static final Map<String, Integer> weekDays = Map.ofEntries(Map.entry("su", 0), Map.entry("mo", 1),
-            Map.entry("tu", 2), Map.entry("we", 3), Map.entry("th", 4), Map.entry("fr", 5), Map.entry("sa", 6));
+    private static final Map<String, Integer> weekDays =
+            Map.ofEntries(
+                    Map.entry("su", 0),
+                    Map.entry("mo", 1),
+                    Map.entry("tu", 2),
+                    Map.entry("we", 3),
+                    Map.entry("th", 4),
+                    Map.entry("fr", 5),
+                    Map.entry("sa", 6));
 
     private final List<LocalDateTime> ldts = new ArrayList<>();
 
-    private static String clean(String str) {
-        return str.trim().toLowerCase().replaceAll(" ,", ",").replaceAll(", ", ",");
+    static String clean(String str) {
+        return String.join(" ", str.split("\\s+"))
+                .trim()
+                .toLowerCase()
+                .replaceAll(" ,", ",")
+                .replaceAll(", ", ",");
     }
 
-    private static List<Integer> simplifyDays(String input) {
+    static List<Integer> simplifyDays(String input) {
         var days = new HashSet<Integer>();
         for (String str : input.split(",")) {
             var strLen = str.length();
             switch (strLen) {
-            case 2: // "mo"
-                if (OpenHours.weekDays.containsKey(str)) {
-                    days.add((OpenHours.weekDays.get(str)));
-                }
-                break;
-            case 5: // "tu-fr"
-                var strs = str.split("-");
-                if (!OpenHours.weekDays.containsKey(strs[0])) {
+                case 2: // "mo"
+                    if (OpenHours.weekDays.containsKey(str)) {
+                        days.add((OpenHours.weekDays.get(str)));
+                    }
                     break;
-                }
-                var from = OpenHours.weekDays.get(strs[0]);
-                if (!OpenHours.weekDays.containsKey(strs[1])) {
+                case 5: // "tu-fr"
+                    var strs = str.split("-");
+                    if (!OpenHours.weekDays.containsKey(strs[0])) {
+                        break;
+                    }
+                    var from = OpenHours.weekDays.get(strs[0]);
+                    if (!OpenHours.weekDays.containsKey(strs[1])) {
+                        break;
+                    }
+                    var to = OpenHours.weekDays.get(strs[1]);
+                    if (to < from) {
+                        to += 7;
+                    }
+                    for (int i = from; i <= to; i++) {
+                        days.add(i % 7);
+                    }
                     break;
-                }
-                var to = OpenHours.weekDays.get(strs[1]);
-                if (to < from) {
-                    to += 7;
-                }
-                for (int i = from; i <= to; i++) {
-                    days.add(i % 7);
-                }
-                break;
-            default:
-                break;
+                default:
+                    break;
             }
         }
         var simple = new ArrayList<Integer>(days);
@@ -57,12 +68,17 @@ public final class OpenHours {
     }
 
     // this is needed because hour can be 24, which is handled in newDate
-    private static SimpleEntry<Integer, Integer> simplifyHours(String input) {
+    static SimpleEntry<Integer, Integer> simplifyHours(String input) {
         var strs = input.split(":");
         if (strs.length != 2) {
             throw new IllegalArgumentException("input malformed");
         }
-        return new SimpleEntry<>(Integer.valueOf(strs[0]), Integer.valueOf(strs[1]));
+        var hour = Integer.valueOf(strs[0]);
+        var min = Integer.valueOf(strs[1]);
+        if (hour > 24 || hour < 0 || min > 60 || min < 0 || (hour == 24 && min > 0)) {
+            throw new IllegalArgumentException("input malformed");
+        }
+        return new SimpleEntry<>(hour, min);
     }
 
     // Set at 2017/01, because it starts a monday
@@ -193,17 +209,12 @@ public final class OpenHours {
         return i;
     }
 
-    private OpenHours() {
-    }
+    private OpenHours() {}
 
     public static final OpenHours Parse(String input) {
         var oh = new OpenHours();
         oh.buildTimes(input);
         oh.merge();
         return oh;
-    }
-
-    public boolean someLibraryMethod() {
-        return true;
     }
 }

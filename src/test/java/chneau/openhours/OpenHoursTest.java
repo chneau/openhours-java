@@ -3,14 +3,109 @@
  */
 package chneau.openhours;
 
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertEquals;
 
+import java.util.AbstractMap.SimpleEntry;
+import java.util.Arrays;
 import org.junit.Test;
 
 public class OpenHoursTest {
     @Test
-    public void testSomeLibraryMethod() {
-        OpenHours classUnderTest = OpenHours.Parse("");
-        assertTrue("someLibraryMethod should return 'true'", classUnderTest.someLibraryMethod());
+    public void testClean() {
+        assertEquals(
+                "capital letters",
+                "mo-fr 10:00-12:00,12:30-16:00",
+                OpenHours.clean("Mo-Fr 10:00-12:00,12:30-16:00"));
+        assertEquals(
+                "capital letters",
+                "mo-fr 10:00-12:00,12:30-16:00",
+                OpenHours.clean("Mo-Fr 10:00-12:00,12:30-16:00"));
+        assertEquals(
+                "comma after space",
+                "mo-fr 10:00-12:00,12:30-16:00",
+                OpenHours.clean("Mo-Fr 10:00-12:00, 12:30-16:00"));
+        assertEquals(
+                "comma before space",
+                "mo-fr 10:00-12:00,12:30-16:00",
+                OpenHours.clean("Mo-Fr 10:00-12:00 ,12:30-16:00"));
+        assertEquals(
+                "comma before and after space",
+                "mo-fr 10:00-12:00,12:30-16:00",
+                OpenHours.clean("Mo-Fr 10:00-12:00 , 12:30-16:00"));
+        assertEquals(
+                "front space",
+                "mo-fr 10:00-12:00,12:30-16:00",
+                OpenHours.clean(" Mo-Fr 10:00-12:00,12:30-16:00"));
+        assertEquals(
+                "trailing space",
+                "mo-fr 10:00-12:00,12:30-16:00",
+                OpenHours.clean("Mo-Fr 10:00-12:00,12:30-16:00 "));
+        assertEquals(
+                "both spaces",
+                "mo-fr 10:00-12:00,12:30-16:00",
+                OpenHours.clean(" Mo-Fr 10:00-12:00,12:30-16:00 "));
+        assertEquals(
+                "mixed both spaces/tabs",
+                "mo-fr 10:00-12:00,12:30-16:00",
+                OpenHours.clean(" 	Mo-Fr 10:00-12:00,12:30-16:00	 "));
+        assertEquals(
+                "inner mixed spaces/tabs",
+                "mo-fr 10:00-12:00,12:30-16:00",
+                OpenHours.clean(" 	 	Mo-Fr 	 10:00-12:00,12:30-16:00 	 	 "));
+    }
+
+    @Test
+    public void testSimplifydays() {
+        assertEquals("simple", Arrays.asList(1), OpenHours.simplifyDays("mo"));
+        assertEquals("double with error", Arrays.asList(1), OpenHours.simplifyDays("mo,mardi"));
+        assertEquals("double", Arrays.asList(3, 5), OpenHours.simplifyDays("we,fr"));
+        assertEquals("range", Arrays.asList(3, 4, 5), OpenHours.simplifyDays("we-fr"));
+        assertEquals(
+                "range with double",
+                Arrays.asList(0, 1, 3, 4, 5),
+                OpenHours.simplifyDays("mo,we-fr,su"));
+        assertEquals("error -", Arrays.asList(), OpenHours.simplifyDays("mo-pl"));
+        assertEquals("error ,", Arrays.asList(1), OpenHours.simplifyDays("pl,mo"));
+        assertEquals("weird range", Arrays.asList(0, 1, 5, 6), OpenHours.simplifyDays("fr-mo"));
+        assertEquals(
+                "dupicate days",
+                Arrays.asList(1, 2, 3, 4, 5),
+                OpenHours.simplifyDays("mo-tu,tu,tu-fr,fr"));
+    }
+
+    @Test
+    public void testSimplifyhours() {
+        assertEquals(
+                "00:00", new SimpleEntry<Integer, Integer>(0, 0), OpenHours.simplifyHours("00:00"));
+        assertEquals(
+                "10:30",
+                new SimpleEntry<Integer, Integer>(10, 30),
+                OpenHours.simplifyHours("10:30"));
+        assertEquals(
+                "09:05", new SimpleEntry<Integer, Integer>(9, 5), OpenHours.simplifyHours("09:05"));
+        assertEquals(
+                "24:00",
+                new SimpleEntry<Integer, Integer>(24, 0),
+                OpenHours.simplifyHours("24:00"));
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testSimplifyhours_1() {
+        OpenHours.simplifyHours("00:-10");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testSimplifyhours_2() {
+        OpenHours.simplifyHours("24:01");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testSimplifyhours_3() {
+        OpenHours.simplifyHours("-50:99");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testSimplifyhours_4() {
+        OpenHours.simplifyHours("33:33:33");
     }
 }
