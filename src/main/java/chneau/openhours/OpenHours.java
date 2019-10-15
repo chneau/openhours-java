@@ -1,5 +1,6 @@
 package chneau.openhours;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
@@ -10,15 +11,8 @@ import java.util.List;
 import java.util.Map;
 
 public final class OpenHours {
-    private static final Map<String, Integer> weekDays =
-            Map.ofEntries(
-                    Map.entry("su", 0),
-                    Map.entry("mo", 1),
-                    Map.entry("tu", 2),
-                    Map.entry("we", 3),
-                    Map.entry("th", 4),
-                    Map.entry("fr", 5),
-                    Map.entry("sa", 6));
+    private static final Map<String, Integer> weekDays = Map.ofEntries(Map.entry("su", 0), Map.entry("mo", 1),
+            Map.entry("tu", 2), Map.entry("we", 3), Map.entry("th", 4), Map.entry("fr", 5), Map.entry("sa", 6));
 
     private final List<LocalDateTime> x = new ArrayList<>();
 
@@ -31,30 +25,30 @@ public final class OpenHours {
         for (String str : input.split(",")) {
             var strLen = str.length();
             switch (strLen) {
-                case 2: // "mo"
-                    if (OpenHours.weekDays.containsKey(str)) {
-                        days.add((OpenHours.weekDays.get(str)));
-                    }
+            case 2: // "mo"
+                if (OpenHours.weekDays.containsKey(str)) {
+                    days.add((OpenHours.weekDays.get(str)));
+                }
+                break;
+            case 5: // "tu-fr"
+                var strs = str.split("-");
+                if (!OpenHours.weekDays.containsKey(strs[0])) {
                     break;
-                case 5: // "tu-fr"
-                    var strs = str.split("-");
-                    if (!OpenHours.weekDays.containsKey(strs[0])) {
-                        break;
-                    }
-                    var from = OpenHours.weekDays.get(strs[0]);
-                    if (!OpenHours.weekDays.containsKey(strs[1])) {
-                        break;
-                    }
-                    var to = OpenHours.weekDays.get(strs[1]);
-                    if (to < from) {
-                        to += 7;
-                    }
-                    for (int i = from; i <= to; i++) {
-                        days.add(i % 7);
-                    }
+                }
+                var from = OpenHours.weekDays.get(strs[0]);
+                if (!OpenHours.weekDays.containsKey(strs[1])) {
                     break;
-                default:
-                    break;
+                }
+                var to = OpenHours.weekDays.get(strs[1]);
+                if (to < from) {
+                    to += 7;
+                }
+                for (int i = from; i <= to; i++) {
+                    days.add(i % 7);
+                }
+                break;
+            default:
+                break;
             }
         }
         var simple = new ArrayList<Integer>(days);
@@ -139,6 +133,54 @@ public final class OpenHours {
         var t = newDateFromLDT(ldt);
         var i = matchIndex(t);
         return i % 2 == 1;
+    }
+
+    public Duration nextDur(LocalDateTime ldt) {
+        var x = newDateFromLDT(ldt);
+        var i = matchIndex(x);
+        if (i == this.x.size()) {
+            i = 0;
+        }
+        var xi = this.x.get(i);
+        if (x.isAfter(xi)) {
+            xi = xi.plusDays(7);
+        }
+        return Duration.between(xi, x);
+    }
+
+    public LocalDateTime when(LocalDateTime ldt, Duration d) {
+        var x = newDateFromLDT(ldt);
+        var i = matchIndex(x);
+        LocalDateTime found = null;
+        if (i % 2 == 1) {
+            var newO = x.plus(d);
+            if (newO.isBefore(this.x.get(i)) || newO.equals(this.x.get(i))) {
+                found = x;
+            } else {
+                i += 2;
+            }
+        } else {
+            ++i;
+        }
+        for (int max = i + this.x.size(); i < max && found == null; i += 2) {
+            var newI = i % this.x.size();
+            var newO = this.x.get(newI - 1).plus(d);
+            if (newO.isBefore(this.x.get(newI)) || newO.equals(this.x.get(newI))) {
+                found = this.x.get(newI - 1);
+            }
+        }
+        if (found == null) {
+            return found;
+        }
+        if (x.isAfter(found)) {
+            found = found.plusDays(7);
+        }
+        return found;
+    }
+
+    public LocalDateTime nextDate(LocalDateTime ldt) {
+        var dur = nextDur(ldt);
+        return ldt.plus(dur);
     }
 
     private int matchIndex(LocalDateTime ldt) {
