@@ -66,7 +66,7 @@ public final class OpenHours {
     private static SimpleEntry<Integer, Integer> simplifyHours(String input) {
         var strs = input.split(":");
         if (strs.length != 2) {
-            return null;
+            throw new IllegalArgumentException("input mal formed");
         }
         return new SimpleEntry<>(Integer.valueOf(strs[0]), Integer.valueOf(strs[1]));
     }
@@ -151,10 +151,14 @@ public final class OpenHours {
         return i;
     }
 
-    public OpenHours(String input) {
-        super();
-        buildTimes(input);
-        merge();
+    private OpenHours() {
+    }
+
+    public static final OpenHours Parse(String input) {
+        var oh = new OpenHours();
+        oh.buildTimes(input);
+        oh.merge();
+        return oh;
     }
 
     public boolean someLibraryMethod() {

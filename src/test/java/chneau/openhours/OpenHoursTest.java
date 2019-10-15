@@ -10,7 +10,7 @@ import org.junit.Test;
 public class OpenHoursTest {
     @Test
     public void testSomeLibraryMethod() {
-        OpenHours classUnderTest = new OpenHours("");
+        OpenHours classUnderTest = OpenHours.Parse("");
         assertTrue("someLibraryMethod should return 'true'", classUnderTest.someLibraryMethod());
     }
 }
