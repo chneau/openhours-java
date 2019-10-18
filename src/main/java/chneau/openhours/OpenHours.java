@@ -8,9 +8,11 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public final class OpenHours implements Whenable {
+
     private static final Map<String, Integer> weekDays =
             Map.ofEntries(
                     Map.entry("su", 0),
@@ -21,12 +23,12 @@ public final class OpenHours implements Whenable {
                     Map.entry("fr", 5),
                     Map.entry("sa", 6));
 
-    final List<LocalDateTime> ldts = new ArrayList<>();
+    final transient List<LocalDateTime> ldts = new ArrayList<>();
 
     static String clean(String str) {
         return String.join(" ", str.split("\\s+"))
                 .trim()
-                .toLowerCase()
+                .toLowerCase(Locale.ENGLISH)
                 .replaceAll(" ,", ",")
                 .replaceAll(", ", ",");
     }
@@ -100,7 +102,7 @@ public final class OpenHours implements Whenable {
         if (inputLen > 0 && input.charAt(inputLen - 1) == ';') {
             input = input.substring(0, inputLen - 1);
         }
-        if (input == "") {
+        if ("".equals(input)) {
             input = "su-sa 00:00-24:00";
         }
         for (String str : clean(input).split(";")) {
@@ -137,15 +139,14 @@ public final class OpenHours implements Whenable {
         for (int i = 0; i < ldts.size(); i += 2) {
             for (int j = i + 2; j < ldts.size(); j += 2) {
                 var res = merge4(ldts.get(i), ldts.get(i + 1), ldts.get(j), ldts.get(j + 1));
-                if (res == null) {
-                    continue;
+                if (res != null) {
+                    ldts.set(i, res.get(0));
+                    ldts.set(i + 1, res.get(1));
+                    ldts.remove(j);
+                    ldts.remove(j);
+                    i -= 2;
+                    break;
                 }
-                ldts.set(i, res.get(0));
-                ldts.set(i + 1, res.get(1));
-                ldts.remove(j);
-                ldts.remove(j);
-                i -= 2;
-                break;
             }
         }
     }
