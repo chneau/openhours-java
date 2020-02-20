@@ -5,9 +5,9 @@ package chneau.openhours;
 
 import static org.junit.Assert.assertEquals;
 
+import chneau.openhours.OpenHours.Time;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.AbstractMap.SimpleEntry;
 import java.util.Arrays;
 import org.junit.Test;
 
@@ -77,18 +77,11 @@ public class OpenHoursTest {
 
     @Test
     public void testSimplifyhours() {
-        assertEquals(
-                "00:00", new SimpleEntry<Integer, Integer>(0, 0), OpenHours.simplifyHours("00:00"));
-        assertEquals(
-                "10:30",
-                new SimpleEntry<Integer, Integer>(10, 30),
-                OpenHours.simplifyHours("10:30"));
-        assertEquals(
-                "09:05", new SimpleEntry<Integer, Integer>(9, 5), OpenHours.simplifyHours("09:05"));
-        assertEquals(
-                "24:00",
-                new SimpleEntry<Integer, Integer>(24, 0),
-                OpenHours.simplifyHours("24:00"));
+        assertEquals("00:00", new Time(0, 0, 0), OpenHours.simplifyHours("00:00:00"));
+        assertEquals("10:30", new Time(10, 30, 0), OpenHours.simplifyHours("10:30"));
+        assertEquals("10:30:55", new Time(10, 30, 55), OpenHours.simplifyHours("10:30:55"));
+        assertEquals("09:05", new Time(9, 5, 0), OpenHours.simplifyHours("09:05"));
+        assertEquals("24:00", new Time(24, 0, 0), OpenHours.simplifyHours("24:00"));
     }
 
     @Test(expected = IllegalArgumentException.class)
@@ -167,6 +160,10 @@ public class OpenHoursTest {
                 "1 hour before start",
                 Duration.ofHours(1),
                 oh.nextDur(LocalDateTime.of(2019, 3, 4, 7, 0)));
+        assertEquals(
+                "1 hour before start",
+                Duration.ofSeconds(3601),
+                OpenHours.parse("mo 08:00:01-18:00").nextDur(LocalDateTime.of(2019, 3, 4, 7, 0)));
         assertEquals(false, oh.match(LocalDateTime.of(2019, 3, 4, 7, 0)));
         assertEquals(
                 "at start", Duration.ofHours(10), oh.nextDur(LocalDateTime.of(2019, 3, 4, 8, 0)));

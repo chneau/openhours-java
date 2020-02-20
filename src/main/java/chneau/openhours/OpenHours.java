@@ -2,7 +2,6 @@ package chneau.openhours;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -12,6 +11,28 @@ import java.util.Locale;
 import java.util.Map;
 
 public final class OpenHours implements Whenable {
+    public static class Time {
+        public int hour;
+        public int minute;
+        public int second;
+
+        public Time() {}
+
+        public Time(int hour, int minute, int second) {
+            this.hour = hour;
+            this.minute = minute;
+            this.second = second;
+        }
+
+        public String toString() {
+            return hour + ":" + minute + ":" + second;
+        }
+
+        public boolean equals(Object obj) {
+            var o = (Time) obj;
+            return o.toString().equals(o.toString());
+        }
+    }
 
     private static final Map<String, Integer> weekDays =
             Map.ofEntries(
@@ -70,31 +91,49 @@ public final class OpenHours implements Whenable {
     }
 
     // this is needed because hour can be 24, which is handled in newDate
-    static SimpleEntry<Integer, Integer> simplifyHours(String input) {
+    static Time simplifyHours(String input) {
         var strs = input.split(":");
-        if (strs.length != 2) {
+        if (strs.length < 2 || strs.length > 3) {
             throw new IllegalArgumentException("input malformed");
         }
         var hour = Integer.valueOf(strs[0]);
         var min = Integer.valueOf(strs[1]);
-        if (hour > 24 || hour < 0 || min > 59 || min < 0 || (hour == 24 && min > 0)) {
+        var sec = 0;
+        if (strs.length == 3) {
+            sec = Integer.valueOf(strs[2]);
+        }
+        if (hour > 24
+                || hour < 0
+                || min > 59
+                || min < 0
+                || (hour == 24 && min > 0 || hour == 24 && sec > 0)
+                || sec > 59
+                || sec < 0) {
             throw new IllegalArgumentException("input malformed");
         }
-        return new SimpleEntry<>(hour, min);
+        var t = new Time();
+        t.hour = hour;
+        t.minute = min;
+        t.second = sec;
+        return t;
     }
 
     // Set at 2017/01, because it starts a monday
-    private static LocalDateTime newDate(int day, int hour, int minute) {
+    private static LocalDateTime newDate(int day, int hour, int minute, int second) {
         if (hour == 24) {
             ++day;
             hour = 0;
         }
-        return LocalDateTime.of(2017, 1, day + 1, hour, minute);
+        return LocalDateTime.of(2017, 1, day + 1, hour, minute, second);
     }
 
     // Offset a time
     private static LocalDateTime newDateFromLDT(LocalDateTime other) {
-        return newDate(other.getDayOfWeek().getValue(), other.getHour(), other.getMinute());
+        return newDate(
+                other.getDayOfWeek().getValue(),
+                other.getHour(),
+                other.getMinute(),
+                other.getSecond());
     }
 
     private void buildTimes(String input) {
@@ -113,8 +152,8 @@ public final class OpenHours implements Whenable {
                 var from = simplifyHours(times[0]);
                 var to = simplifyHours(times[1]);
                 for (Integer day : days) {
-                    this.ldts.add(newDate(day, from.getKey(), from.getValue()));
-                    this.ldts.add(newDate(day, to.getKey(), to.getValue()));
+                    this.ldts.add(newDate(day, from.hour, from.minute, from.second));
+                    this.ldts.add(newDate(day, to.hour, to.minute, to.second));
                 }
             }
         }
