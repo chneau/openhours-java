@@ -46,6 +46,14 @@ public final class OpenHours implements Whenable {
 
     final transient List<LocalDateTime> ldts = new ArrayList<>();
 
+    public static OpenHours merge(OpenHours a, OpenHours b) {
+        var res = new OpenHours();
+        res.ldts.addAll(a.ldts);
+        res.ldts.addAll(b.ldts);
+        Collections.sort(res.ldts);
+        return res;
+    }
+
     static String clean(String str) {
         return String.join(" ", str.split("\\s+"))
                 .trim()
