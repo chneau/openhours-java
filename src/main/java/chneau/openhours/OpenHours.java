@@ -16,7 +16,8 @@ public final class OpenHours implements Whenable {
         public int minute;
         public int second;
 
-        public Time() {}
+        public Time() {
+        }
 
         public Time(int hour, int minute, int second) {
             this.hour = hour;
@@ -34,19 +35,12 @@ public final class OpenHours implements Whenable {
         }
     }
 
-    private static final Map<String, Integer> weekDays =
-            Map.ofEntries(
-                    Map.entry("su", 0),
-                    Map.entry("mo", 1),
-                    Map.entry("tu", 2),
-                    Map.entry("we", 3),
-                    Map.entry("th", 4),
-                    Map.entry("fr", 5),
-                    Map.entry("sa", 6));
+    private static final Map<String, Integer> weekDays = Map.ofEntries(Map.entry("su", 0), Map.entry("mo", 1),
+            Map.entry("tu", 2), Map.entry("we", 3), Map.entry("th", 4), Map.entry("fr", 5), Map.entry("sa", 6));
 
     final transient List<LocalDateTime> ldts = new ArrayList<>();
 
-    public static OpenHours merge(OpenHours ...x) {
+    public static OpenHours merge(OpenHours... x) {
         var res = new OpenHours();
         for (var openHours : x) {
             res.ldts.addAll(openHours.ldts);
@@ -56,10 +50,7 @@ public final class OpenHours implements Whenable {
     }
 
     static String clean(String str) {
-        return String.join(" ", str.split("\\s+"))
-                .trim()
-                .toLowerCase(Locale.ENGLISH)
-                .replaceAll(" ,", ",")
+        return String.join(" ", str.split("\\s+")).trim().toLowerCase(Locale.ENGLISH).replaceAll(" ,", ",")
                 .replaceAll(", ", ",");
     }
 
@@ -111,12 +102,7 @@ public final class OpenHours implements Whenable {
         if (strs.length == 3) {
             sec = Integer.valueOf(strs[2]);
         }
-        if (hour > 24
-                || hour < 0
-                || min > 59
-                || min < 0
-                || (hour == 24 && min > 0 || hour == 24 && sec > 0)
-                || sec > 59
+        if (hour > 24 || hour < 0 || min > 59 || min < 0 || (hour == 24 && min > 0 || hour == 24 && sec > 0) || sec > 59
                 || sec < 0) {
             throw new IllegalArgumentException("input malformed");
         }
@@ -138,11 +124,7 @@ public final class OpenHours implements Whenable {
 
     // Offset a time
     private static LocalDateTime newDateFromLDT(LocalDateTime other) {
-        return newDate(
-                other.getDayOfWeek().getValue(),
-                other.getHour(),
-                other.getMinute(),
-                other.getSecond());
+        return newDate(other.getDayOfWeek().getValue(), other.getHour(), other.getMinute(), other.getSecond());
     }
 
     private void buildTimes(String input) {
@@ -179,11 +161,9 @@ public final class OpenHours implements Whenable {
     }
 
     private void merge() {
-        Collections.sort(
-                ldts,
-                (LocalDateTime i, LocalDateTime j) -> {
-                    return i.getDayOfMonth() - j.getDayOfMonth();
-                });
+        Collections.sort(ldts, (LocalDateTime i, LocalDateTime j) -> {
+            return i.getDayOfMonth() - j.getDayOfMonth();
+        });
         for (int i = 0; i < ldts.size(); i += 2) {
             for (int j = i + 2; j < ldts.size(); j += 2) {
                 var res = merge4(ldts.get(i), ldts.get(i + 1), ldts.get(j), ldts.get(j + 1));
@@ -263,7 +243,14 @@ public final class OpenHours implements Whenable {
         return i;
     }
 
-    private OpenHours() {}
+    public OpenHours add(LocalDateTime from, LocalDateTime to) {
+        var newOh = new OpenHours();
+        newOh.ldts.addAll(ldts);
+        newOh.ldts.add(newDateFromLDT(from));
+        newOh.ldts.add(newDateFromLDT(to));
+        newOh.merge();
+        return newOh;
+    }
 
     public static final OpenHours parse(String input) {
         var oh = new OpenHours();
