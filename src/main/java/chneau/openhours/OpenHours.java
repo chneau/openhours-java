@@ -9,15 +9,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 public final class OpenHours implements Whenable {
+    
     public static class Time {
         public int hour;
         public int minute;
         public int second;
-
-        public Time() {
-        }
 
         public Time(int hour, int minute, int second) {
             this.hour = hour;
@@ -39,6 +38,26 @@ public final class OpenHours implements Whenable {
             Map.entry("tu", 2), Map.entry("we", 3), Map.entry("th", 4), Map.entry("fr", 5), Map.entry("sa", 6));
 
     final transient List<LocalDateTime> ldts = new ArrayList<>();
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(this.ldts);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (obj == null) {
+            return false;
+        }
+        if (getClass() != obj.getClass()) {
+            return false;
+        }
+        final OpenHours other = (OpenHours) obj;
+        return Objects.equals(this.ldts, other.ldts);
+    }
 
     public static OpenHours merge(OpenHours... x) {
         var res = new OpenHours();
@@ -106,11 +125,7 @@ public final class OpenHours implements Whenable {
                 || sec < 0) {
             throw new IllegalArgumentException("input malformed");
         }
-        var t = new Time();
-        t.hour = hour;
-        t.minute = min;
-        t.second = sec;
-        return t;
+        return new Time(hour, min, sec);
     }
 
     // Set at 2017/01, because it starts a monday
