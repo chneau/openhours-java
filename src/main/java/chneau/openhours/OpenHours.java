@@ -12,16 +12,18 @@ import java.util.Map;
 import java.util.Objects;
 
 public final class OpenHours implements Whenable {
-    
+
     public static class Time {
         public int hour;
         public int minute;
         public int second;
+        public int nano;
 
-        public Time(int hour, int minute, int second) {
+        public Time(int hour, int minute, int second, int nano) {
             this.hour = hour;
             this.minute = minute;
             this.second = second;
+            this.nano = nano;
         }
 
         public String toString() {
@@ -125,21 +127,21 @@ public final class OpenHours implements Whenable {
                 || sec < 0) {
             throw new IllegalArgumentException("input malformed");
         }
-        return new Time(hour, min, sec);
+        return new Time(hour, min, sec, 0);
     }
 
     // Set at 2017/01, because it starts a monday
-    private static LocalDateTime newDate(int day, int hour, int minute, int second) {
+    private static LocalDateTime newDate(int day, int hour, int minute, int second, int nano) {
         if (hour == 24) {
             ++day;
             hour = 0;
         }
-        return LocalDateTime.of(2017, 1, day + 1, hour, minute, second);
+        return LocalDateTime.of(2017, 1, day + 1, hour, minute, second, nano);
     }
 
     // Offset a time
     private static LocalDateTime newDateFromLDT(LocalDateTime other) {
-        return newDate(other.getDayOfWeek().getValue(), other.getHour(), other.getMinute(), other.getSecond());
+        return newDate(other.getDayOfWeek().getValue(), other.getHour(), other.getMinute(), other.getSecond(),other.getNano());
     }
 
     private void buildTimes(String input) {
@@ -158,8 +160,8 @@ public final class OpenHours implements Whenable {
                 var from = simplifyHours(times[0]);
                 var to = simplifyHours(times[1]);
                 for (Integer day : days) {
-                    this.ldts.add(newDate(day, from.hour, from.minute, from.second));
-                    this.ldts.add(newDate(day, to.hour, to.minute, to.second));
+                    this.ldts.add(newDate(day, from.hour, from.minute, from.second, from.nano));
+                    this.ldts.add(newDate(day, to.hour, to.minute, to.second, from.nano));
                 }
             }
         }
