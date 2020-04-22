@@ -141,7 +141,7 @@ public final class OpenHours implements Whenable {
 
     // Offset a time
     private static LocalDateTime newDateFromLDT(LocalDateTime other) {
-        return newDate(other.getDayOfWeek().getValue(), other.getHour(), other.getMinute(), other.getSecond(),other.getNano());
+        return newDate(other.getDayOfWeek().getValue()%7, other.getHour(), other.getMinute(), other.getSecond(),other.getNano());
     }
 
     private void buildTimes(String input) {

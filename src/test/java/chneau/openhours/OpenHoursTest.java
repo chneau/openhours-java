@@ -209,9 +209,17 @@ public class OpenHoursTest {
 
         @Test
         public void testWhenNano() {
-                assertEquals("test nano overflow", LocalDateTime.of(2019, 3, 12, 8, 0, 0, 0), OpenHours.parse("mo-fr 08:00-18:00")
-                                .when(LocalDateTime.of(2019, 3, 11, 8, 0, 0, 5), Duration.ofHours(10)));
-                assertEquals("test nano + second overflow", LocalDateTime.of(2019, 3, 12, 8, 0, 0, 0), OpenHours.parse("mo-fr 08:00-18:00")
-                                .when(LocalDateTime.of(2019, 3, 11, 8, 0, 1, 5), Duration.ofHours(10)));
+                assertEquals("test nano overflow", LocalDateTime.of(2019, 3, 12, 8, 0, 0, 0),
+                                OpenHours.parse("mo-fr 08:00-18:00").when(LocalDateTime.of(2019, 3, 11, 8, 0, 0, 5),
+                                                Duration.ofHours(10)));
+                assertEquals("test nano + second overflow", LocalDateTime.of(2019, 3, 12, 8, 0, 0, 0),
+                                OpenHours.parse("mo-fr 08:00-18:00").when(LocalDateTime.of(2019, 3, 11, 8, 0, 1, 5),
+                                                Duration.ofHours(10)));
+        }
+
+        @Test
+        public void testBugs() {
+                assertEquals("test nano overflow", LocalDateTime.of(2020, 4, 26, 9, 0), OpenHours.parse("mo-su 07:00-19:00")
+                                .when(LocalDateTime.of(2020, 4, 26, 9, 0), Duration.ofHours(2)));
         }
 }
