@@ -10,13 +10,9 @@ import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 
 import java.io.IOException;
-import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -44,6 +40,10 @@ public final class OpenHours implements Whenable {
     private static final ConcurrentHashMap<String, OpenHours> INTERN_POOL = new ConcurrentHashMap<>();
     private static final OpenHours EMPTY = new OpenHours("", new TimeWindow[0], new long[BITMASK_WORDS]);
     private static final OpenHours ALWAYS_OPEN = createAlwaysOpen();
+
+    private static final ThreadLocal<Entry> FAST_CACHE = ThreadLocal.withInitial(() -> new Entry("", EMPTY));
+
+    private record Entry(String key, OpenHours val) {}
 
     private final String raw;
     private final TimeWindow[] windows;
@@ -73,18 +73,26 @@ public final class OpenHours implements Whenable {
         if (trimmed.isEmpty()) {
             return EMPTY;
         }
-        if ("24/7".equalsIgnoreCase(trimmed)) {
+        if (trimmed.length() == 4 && "24/7".equalsIgnoreCase(trimmed)) {
             return ALWAYS_OPEN;
+        }
+
+        Entry e = FAST_CACHE.get();
+        if (trimmed.equals(e.key)) {
+            return e.val;
         }
 
         OpenHours cached = INTERN_POOL.get(trimmed);
         if (cached != null) {
+            FAST_CACHE.set(new Entry(trimmed, cached));
             return cached;
         }
 
         OpenHours created = parseUncached(trimmed);
-        INTERN_POOL.putIfAbsent(trimmed, created);
-        return created;
+        OpenHours prev = INTERN_POOL.putIfAbsent(trimmed, created);
+        OpenHours res = (prev != null) ? prev : created;
+        FAST_CACHE.set(new Entry(trimmed, res));
+        return res;
     }
 
     public static OpenHours from(String expression) {
@@ -126,11 +134,21 @@ public final class OpenHours implements Whenable {
 
     public Duration getTimeToOpen(LocalDateTime from) {
         if (windows.length == 0) return null;
-        if (isAlwaysOpen() || isOpen(from)) return Duration.ZERO;
+        if (isAlwaysOpen()) return Duration.ZERO;
 
-        int weekMinute = getWeekMinute(from);
-        int diffMin = findNextOpenMinute(weekMinute);
-        if (diffMin < 0) return null;
+        int t = getWeekMinute(from);
+        int idx = findFirstWindowStartingAtOrAfter(t);
+
+        int diffMin;
+        if (idx < windows.length) {
+            TimeWindow w = windows[idx];
+            if (w.start <= t) {
+                return Duration.ZERO;
+            }
+            diffMin = w.start - t;
+        } else {
+            diffMin = (MINUTES_PER_WEEK - t) + windows[0].start;
+        }
 
         int subMinuteSeconds = from.getSecond();
         int subMinuteNanos = from.getNano();
@@ -139,184 +157,245 @@ public final class OpenHours implements Whenable {
 
     public Duration getTimeToOpenForDuration(LocalDateTime from, Duration required) {
         if (windows.length == 0) return null;
-        long reqMinutesLong = (required.toSeconds() + 59) / 60;
-        int reqMinutes = (int) Math.max(1, reqMinutesLong);
+        long reqNanos = required.toNanos();
+        if (reqNanos <= 0) return Duration.ZERO;
 
+        int reqMinutes = (int) ((required.toSeconds() + 59) / 60);
         if (reqMinutes > MINUTES_PER_WEEK) return null;
         if (isAlwaysOpen()) return Duration.ZERO;
 
-        int startWeekMinute = getWeekMinute(from);
-        int diffMin = findNextContiguousOpenMinute(startWeekMinute, reqMinutes);
-        if (diffMin < 0) return null;
+        int t = getWeekMinute(from);
+        long subDurNanos = from.getSecond() * 1_000_000_000L + from.getNano();
+        int startIdx = findFirstWindowStartingAtOrAfter(t);
 
-        int subMinuteSeconds = from.getSecond();
-        int subMinuteNanos = from.getNano();
-        return Duration.ofMinutes(diffMin).minusSeconds(subMinuteSeconds).minusNanos(subMinuteNanos);
+        int n = windows.length;
+        boolean lastEndsAtWeekEnd = windows[n - 1].end == MINUTES_PER_WEEK;
+        boolean firstStartsAtZero = windows[0].start == 0;
+
+        for (int i = startIdx; i < n; i++) {
+            TimeWindow w = windows[i];
+            int effectiveEnd = (i == n - 1 && lastEndsAtWeekEnd && firstStartsAtZero)
+                    ? MINUTES_PER_WEEK + windows[0].end
+                    : w.end;
+
+            if (t >= w.start) {
+                long remNanos = ((long) (effectiveEnd - t)) * 60_000_000_000L - subDurNanos;
+                if (remNanos >= reqNanos) {
+                    return Duration.ZERO;
+                }
+            } else {
+                if (effectiveEnd - w.start >= reqMinutes) {
+                    int diffMin = w.start - t;
+                    return Duration.ofMinutes(diffMin)
+                            .minusSeconds(from.getSecond())
+                            .minusNanos(from.getNano());
+                }
+            }
+        }
+
+        for (int i = 0; i < n; i++) {
+            TimeWindow w = windows[i];
+            int effectiveEnd = (i == n - 1 && lastEndsAtWeekEnd && firstStartsAtZero)
+                    ? MINUTES_PER_WEEK + windows[0].end
+                    : w.end;
+
+            if (effectiveEnd - w.start >= reqMinutes) {
+                int diffMin = (MINUTES_PER_WEEK - t) + w.start;
+                return Duration.ofMinutes(diffMin)
+                        .minusSeconds(from.getSecond())
+                        .minusNanos(from.getNano());
+            }
+        }
+
+        return null;
     }
 
     @Override
     public LocalDateTime when(LocalDateTime from, Duration duration) {
         Duration wait = getTimeToOpenForDuration(from, duration);
-        return wait != null ? from.plus(wait) : null;
+        if (wait == null) return null;
+        if (wait.isZero()) return from;
+        return from.plus(wait);
     }
 
     public LocalDateTime getCurrentShiftEnd(LocalDateTime dt) {
         if (windows.length == 0) return null;
         if (isAlwaysOpen()) return dt.plusWeeks(52);
-        if (!isOpen(dt)) return null;
 
-        int weekMinute = getWeekMinute(dt);
-        int diffMin = findCurrentShiftEndMinute(weekMinute);
-        if (diffMin < 0) return null;
+        int t = getWeekMinute(dt);
+        int idx = findFirstWindowStartingAtOrAfter(t);
+        if (idx >= windows.length || windows[idx].start > t) {
+            return null;
+        }
 
-        int subMinuteSeconds = dt.getSecond();
-        int subMinuteNanos = dt.getNano();
-        return dt.plusMinutes(diffMin).minusSeconds(subMinuteSeconds).minusNanos(subMinuteNanos);
+        TimeWindow w = windows[idx];
+        int diffMin = w.end - t;
+        if (idx == windows.length - 1 && w.end == MINUTES_PER_WEEK && windows[0].start == 0) {
+            diffMin = (MINUTES_PER_WEEK - t) + windows[0].end;
+        }
+
+        return dt.plusMinutes(diffMin)
+                .minusSeconds(dt.getSecond())
+                .minusNanos(dt.getNano());
     }
 
     public NextDurResult nextDur(LocalDateTime dt) {
         if (windows.length == 0) return new NextDurResult(false, Duration.ZERO);
         if (isAlwaysOpen()) return new NextDurResult(true, Duration.ofDays(365));
 
-        int weekMinute = getWeekMinute(dt);
-        int word = weekMinute >> 6;
-        long mask = 1L << (weekMinute & 63);
-        boolean currentlyOpen = (bitmask[word] & mask) != 0;
+        int t = getWeekMinute(dt);
+        int idx = findFirstWindowStartingAtOrAfter(t);
 
-        int diffMin = currentlyOpen ? findCurrentShiftEndMinute(weekMinute) : findNextOpenMinute(weekMinute);
-        if (diffMin < 0) return new NextDurResult(currentlyOpen, Duration.ZERO);
+        if (idx < windows.length) {
+            TimeWindow w = windows[idx];
+            if (w.start <= t) {
+                // Currently open
+                int diffMin = w.end - t;
+                if (idx == windows.length - 1 && w.end == MINUTES_PER_WEEK && windows[0].start == 0) {
+                    diffMin = (MINUTES_PER_WEEK - t) + windows[0].end;
+                }
+                Duration dur = Duration.ofMinutes(diffMin)
+                        .minusSeconds(dt.getSecond())
+                        .minusNanos(dt.getNano());
+                return new NextDurResult(true, dur);
+            }
+            // Currently closed, opens at w.start
+            int diffMin = w.start - t;
+            Duration dur = Duration.ofMinutes(diffMin)
+                    .minusSeconds(dt.getSecond())
+                    .minusNanos(dt.getNano());
+            return new NextDurResult(false, dur);
+        }
 
-        int subMinuteSeconds = dt.getSecond();
-        int subMinuteNanos = dt.getNano();
-        Duration dur = Duration.ofMinutes(diffMin).minusSeconds(subMinuteSeconds).minusNanos(subMinuteNanos);
-        return new NextDurResult(currentlyOpen, dur);
+        // Currently closed, opens at windows[0].start next week
+        int diffMin = (MINUTES_PER_WEEK - t) + windows[0].start;
+        Duration dur = Duration.ofMinutes(diffMin)
+                .minusSeconds(dt.getSecond())
+                .minusNanos(dt.getNano());
+        return new NextDurResult(false, dur);
     }
 
     public NextDateResult nextDate(LocalDateTime dt) {
-        if (windows.length == 0) return new NextDateResult(false, dt);
-        if (isAlwaysOpen()) return new NextDateResult(true, dt.plusDays(365));
-
-        int weekMinute = getWeekMinute(dt);
-        int word = weekMinute >> 6;
-        long mask = 1L << (weekMinute & 63);
-        boolean currentlyOpen = (bitmask[word] & mask) != 0;
-
-        int diffMin = currentlyOpen ? findCurrentShiftEndMinute(weekMinute) : findNextOpenMinute(weekMinute);
-        if (diffMin < 0) return new NextDateResult(currentlyOpen, dt);
-
-        int subMinuteSeconds = dt.getSecond();
-        int subMinuteNanos = dt.getNano();
-        LocalDateTime next = dt.plusMinutes(diffMin).minusSeconds(subMinuteSeconds).minusNanos(subMinuteNanos);
-        return new NextDateResult(currentlyOpen, next);
+        NextDurResult res = nextDur(dt);
+        LocalDateTime next = res.duration.isZero() ? dt : dt.plus(res.duration);
+        return new NextDateResult(res.isOpen, next);
     }
 
     private static int getWeekMinute(LocalDateTime dt) {
-        int dayIndex = dt.getDayOfWeek().getValue() - 1; // Monday = 0 .. Sunday = 6
-        return dayIndex * 1440 + dt.getHour() * 60 + dt.getMinute();
+        long localSecs = dt.toEpochSecond(java.time.ZoneOffset.UTC);
+        int weekMinute = (int) (((localSecs / 60L) + 4320L) % MINUTES_PER_WEEK);
+        return weekMinute >= 0 ? weekMinute : weekMinute + MINUTES_PER_WEEK;
     }
 
-    private int findNextOpenMinute(int startWeekMinute) {
-        int target = startWeekMinute;
-        int count = 0;
-        while (count < MINUTES_PER_WEEK) {
-            int wordIdx = target >> 6;
-            int bitIdx = target & 63;
-            long shifted = bitmask[wordIdx] >>> bitIdx;
-            if (shifted != 0) {
-                int advance = Long.numberOfTrailingZeros(shifted);
-                count += advance;
-                return count < MINUTES_PER_WEEK ? count : -1;
+    private int findFirstWindowStartingAtOrAfter(int t) {
+        int n = windows.length;
+        switch (n) {
+            case 0 -> { return 0; }
+            case 1 -> { return windows[0].end > t ? 0 : 1; }
+            case 2 -> {
+                if (windows[0].end > t) return 0;
+                if (windows[1].end > t) return 1;
+                return 2;
             }
-            int step = 64 - bitIdx;
-            count += step;
-            target = (target + step) % MINUTES_PER_WEEK;
-        }
-        return -1;
-    }
-
-    private int findCurrentShiftEndMinute(int startWeekMinute) {
-        int target = startWeekMinute;
-        int count = 0;
-        while (count < MINUTES_PER_WEEK) {
-            int wordIdx = target >> 6;
-            int bitIdx = target & 63;
-            long shifted = (~bitmask[wordIdx]) >>> bitIdx;
-            if (shifted != 0) {
-                int advance = Long.numberOfTrailingZeros(shifted);
-                count += advance;
-                return count <= MINUTES_PER_WEEK ? count : MINUTES_PER_WEEK;
+            case 3 -> {
+                if (windows[0].end > t) return 0;
+                if (windows[1].end > t) return 1;
+                if (windows[2].end > t) return 2;
+                return 3;
             }
-            int step = 64 - bitIdx;
-            count += step;
-            target = (target + step) % MINUTES_PER_WEEK;
-        }
-        return MINUTES_PER_WEEK;
-    }
-
-    private int findNextContiguousOpenMinute(int startWeekMinute, int reqMinutes) {
-        int i = 0;
-        while (i < MINUTES_PER_WEEK) {
-            int candidate = (startWeekMinute + i) % MINUTES_PER_WEEK;
-            int k = 0;
-            while (k < reqMinutes) {
-                int target = (candidate + k) % MINUTES_PER_WEEK;
-                int word = target >> 6;
-                long mask = 1L << (target & 63);
-                if ((bitmask[word] & mask) == 0) {
-                    break;
+            case 4 -> {
+                if (windows[0].end > t) return 0;
+                if (windows[1].end > t) return 1;
+                if (windows[2].end > t) return 2;
+                if (windows[3].end > t) return 3;
+                return 4;
+            }
+            default -> {
+                int low = 0;
+                int high = n - 1;
+                int result = n;
+                while (low <= high) {
+                    int mid = (low + high) >>> 1;
+                    if (windows[mid].end > t) {
+                        result = mid;
+                        if (mid == 0) break;
+                        high = mid - 1;
+                    } else {
+                        low = mid + 1;
+                    }
                 }
-                k++;
+                return result;
             }
-            if (k == reqMinutes) {
-                return i;
-            }
-            i += (k + 1);
         }
-        return -1;
     }
 
     private static OpenHours parseUncached(String expression) {
         boolean[] minutes = new boolean[MINUTES_PER_WEEK];
-        String[] rules = expression.split(";");
+        int len = expression.length();
+        int ruleStart = 0;
 
-        for (String rule : rules) {
-            String r = rule.trim();
-            if (r.isEmpty()) continue;
-
-            boolean isOff = r.toLowerCase(Locale.ENGLISH).contains("off") || r.toLowerCase(Locale.ENGLISH).contains("closed");
-            r = r.replaceAll("(?i)\\b(off|closed)\\b", "").trim();
-            if (r.isEmpty()) continue;
-
-            List<Integer> days = new ArrayList<>();
-            List<int[]> timeIntervals = new ArrayList<>();
-
-            parseRuleTokens(r, days, timeIntervals);
-
-            if (days.isEmpty()) {
-                for (int d = 0; d < 7; d++) days.add(d);
+        while (ruleStart < len) {
+            int ruleEnd = ruleStart;
+            while (ruleEnd < len && expression.charAt(ruleEnd) != ';') {
+                ruleEnd++;
             }
-            if (timeIntervals.isEmpty()) {
-                timeIntervals.add(new int[]{0, 1440});
+            String rule = expression.substring(ruleStart, ruleEnd).trim();
+            ruleStart = ruleEnd + 1;
+
+            if (rule.isEmpty()) continue;
+
+            String lower = rule.toLowerCase(Locale.ROOT);
+            boolean isOff = lower.contains("off") || lower.contains("closed");
+
+            int[] days = new int[7];
+            int numDays = 0;
+            int[] intervals = new int[32]; // [start0, end0, start1, end1, ...]
+            int numIntervals = 0;
+
+            String[] tokens = rule.split("\\s+");
+            for (String token : tokens) {
+                token = token.trim();
+                if (token.isEmpty()) continue;
+                if ("off".equalsIgnoreCase(token) || "closed".equalsIgnoreCase(token)) continue;
+
+                char c0 = token.charAt(0);
+                if (Character.isDigit(c0) || c0 == '+') {
+                    numIntervals = parseTimeIntervalsFast(token, intervals, numIntervals);
+                } else if (Character.isLetter(c0)) {
+                    numDays = parseDaysFast(token, days, numDays);
+                }
             }
 
-            for (int day : days) {
-                for (int[] interval : timeIntervals) {
-                    int startMin = day * 1440 + interval[0];
-                    int endMin = day * 1440 + interval[1];
+            if (numDays == 0 && numIntervals == 0) continue;
+            if (numDays == 0) {
+                for (int d = 0; d < 7; d++) days[d] = d;
+                numDays = 7;
+            }
+            if (numIntervals == 0) {
+                intervals[0] = 0;
+                intervals[1] = 1440;
+                numIntervals = 1;
+            }
 
-                    if (interval[1] > 1440) {
-                        // Overnight shift
-                        int actualEnd = (day * 1440 + interval[1]);
+            for (int d = 0; d < numDays; d++) {
+                int day = days[d];
+                for (int inter = 0; inter < numIntervals; inter++) {
+                    int start = intervals[inter * 2];
+                    int end = intervals[inter * 2 + 1];
+                    int startMin = day * 1440 + start;
+
+                    if (end > 1440) {
+                        int actualEnd = day * 1440 + end;
                         for (int m = startMin; m < actualEnd; m++) {
                             minutes[m % MINUTES_PER_WEEK] = !isOff;
                         }
-                    } else if (interval[0] > interval[1]) {
-                        // Inverted overnight interval
-                        int actualEnd = ((day + 1) * 1440 + interval[1]);
+                    } else if (start > end) {
+                        int actualEnd = (day + 1) * 1440 + end;
                         for (int m = startMin; m < actualEnd; m++) {
                             minutes[m % MINUTES_PER_WEEK] = !isOff;
                         }
                     } else {
+                        int endMin = day * 1440 + end;
                         for (int m = startMin; m < endMin; m++) {
                             minutes[m % MINUTES_PER_WEEK] = !isOff;
                         }
@@ -327,73 +406,82 @@ public final class OpenHours implements Whenable {
 
         // Bake into disjoint TimeWindows & Bitmask
         long[] bm = new long[BITMASK_WORDS];
-        List<TimeWindow> winList = new ArrayList<>();
+        int count = 0;
         int inWindowStart = -1;
 
         for (int i = 0; i < MINUTES_PER_WEEK; i++) {
             if (minutes[i]) {
                 bm[i >> 6] |= (1L << (i & 63));
-                if (inWindowStart == -1) {
-                    inWindowStart = i;
-                }
+                if (inWindowStart == -1) inWindowStart = i;
             } else {
                 if (inWindowStart != -1) {
-                    winList.add(new TimeWindow(inWindowStart, i));
+                    count++;
+                    inWindowStart = -1;
+                }
+            }
+        }
+        if (inWindowStart != -1) count++;
+
+        TimeWindow[] winArray = new TimeWindow[count];
+        int idx = 0;
+        inWindowStart = -1;
+
+        for (int i = 0; i < MINUTES_PER_WEEK; i++) {
+            if (minutes[i]) {
+                if (inWindowStart == -1) inWindowStart = i;
+            } else {
+                if (inWindowStart != -1) {
+                    winArray[idx++] = new TimeWindow(inWindowStart, i);
                     inWindowStart = -1;
                 }
             }
         }
         if (inWindowStart != -1) {
-            winList.add(new TimeWindow(inWindowStart, MINUTES_PER_WEEK));
+            winArray[idx] = new TimeWindow(inWindowStart, MINUTES_PER_WEEK);
         }
 
-        return new OpenHours(expression, winList.toArray(new TimeWindow[0]), bm);
+        return new OpenHours(expression, winArray, bm);
     }
 
-    private static void parseRuleTokens(String rule, List<Integer> days, List<int[]> timeIntervals) {
-        String[] parts = rule.split("\\s+");
-        for (String part : parts) {
-            String p = part.trim();
+    private static int parseDaysFast(String token, int[] days, int numDays) {
+        String[] parts = token.split(",");
+        for (String p : parts) {
+            p = p.trim().toLowerCase(Locale.ROOT);
             if (p.isEmpty()) continue;
 
-            if (Character.isDigit(p.charAt(0)) || p.startsWith("+")) {
-                parseTimeIntervals(p, timeIntervals);
-            } else if (Character.isLetter(p.charAt(0))) {
-                parseDays(p, days);
-            }
-        }
-    }
-
-    private static void parseDays(String daysStr, List<Integer> days) {
-        String[] parts = daysStr.split(",");
-        for (String part : parts) {
-            String p = part.trim().toLowerCase(Locale.ENGLISH);
-            if (p.isEmpty()) continue;
-
-            if (p.contains("-")) {
-                String[] range = p.split("-");
-                if (range.length == 2) {
-                    int d1 = parseDay(range[0]);
-                    int d2 = parseDay(range[1]);
-                    if (d1 >= 0 && d2 >= 0) {
-                        if (d2 < d1) d2 += 7;
-                        for (int d = d1; d <= d2; d++) {
-                            int actualDay = d % 7;
-                            if (!days.contains(actualDay)) days.add(actualDay);
+            int dashIdx = p.indexOf('-');
+            if (dashIdx >= 0) {
+                int d1 = parseDayFast(p.substring(0, dashIdx));
+                int d2 = parseDayFast(p.substring(dashIdx + 1));
+                if (d1 >= 0 && d2 >= 0) {
+                    if (d2 < d1) d2 += 7;
+                    for (int d = d1; d <= d2; d++) {
+                        int actual = d % 7;
+                        if (!containsDay(days, numDays, actual) && numDays < 7) {
+                            days[numDays++] = actual;
                         }
                     }
                 }
             } else {
-                int d = parseDay(p);
-                if (d >= 0 && !days.contains(d)) {
-                    days.add(d);
+                int d = parseDayFast(p);
+                if (d >= 0 && !containsDay(days, numDays, d) && numDays < 7) {
+                    days[numDays++] = d;
                 }
             }
         }
+        return numDays;
     }
 
-    private static int parseDay(String day) {
-        return switch (day.toLowerCase(Locale.ENGLISH)) {
+    private static boolean containsDay(int[] days, int count, int target) {
+        for (int i = 0; i < count; i++) {
+            if (days[i] == target) return true;
+        }
+        return false;
+    }
+
+    private static int parseDayFast(String day) {
+        day = day.trim().toLowerCase(Locale.ROOT);
+        return switch (day) {
             case "mo" -> 0;
             case "tu" -> 1;
             case "we" -> 2;
@@ -405,43 +493,55 @@ public final class OpenHours implements Whenable {
         };
     }
 
-    private static void parseTimeIntervals(String timeStr, List<int[]> intervals) {
-        String[] parts = timeStr.split(",");
-        for (String part : parts) {
-            String p = part.trim();
+    private static int parseTimeIntervalsFast(String token, int[] intervals, int numIntervals) {
+        String[] parts = token.split(",");
+        for (String p : parts) {
+            p = p.trim();
             if (p.isEmpty()) continue;
 
             if (p.endsWith("+")) {
-                int start = parseMinuteOfDay(p.substring(0, p.length() - 1));
-                if (start >= 0) {
-                    intervals.add(new int[]{start, 1440});
+                int start = parseMinuteOfDayFast(p.substring(0, p.length() - 1));
+                if (start >= 0 && numIntervals < 16) {
+                    intervals[numIntervals * 2] = start;
+                    intervals[numIntervals * 2 + 1] = 1440;
+                    numIntervals++;
                 }
-            } else if (p.contains("-")) {
-                String[] range = p.split("-");
-                if (range.length == 2) {
-                    int start = parseMinuteOfDay(range[0]);
-                    int end = parseMinuteOfDay(range[1]);
-                    if (start >= 0 && end >= 0) {
+            } else {
+                int dashIdx = p.indexOf('-');
+                if (dashIdx >= 0) {
+                    int start = parseMinuteOfDayFast(p.substring(0, dashIdx));
+                    int end = parseMinuteOfDayFast(p.substring(dashIdx + 1));
+                    if (start >= 0 && end >= 0 && numIntervals < 16) {
                         if (end == 0 || end < start) {
                             end += 1440;
                         }
-                        intervals.add(new int[]{start, end});
+                        intervals[numIntervals * 2] = start;
+                        intervals[numIntervals * 2 + 1] = end;
+                        numIntervals++;
                     }
                 }
             }
         }
+        return numIntervals;
     }
 
-    private static int parseMinuteOfDay(String time) {
-        String[] parts = time.split(":");
-        if (parts.length >= 2) {
-            try {
-                int h = Integer.parseInt(parts[0].trim());
-                int m = Integer.parseInt(parts[1].trim());
+    private static int parseMinuteOfDayFast(String time) {
+        time = time.trim();
+        int colonIdx = time.indexOf(':');
+        if (colonIdx < 0) return -1;
+        try {
+            int h = Integer.parseInt(time.substring(0, colonIdx).trim());
+            int m = Integer.parseInt(time.substring(colonIdx + 1).trim());
+            if (h <= 24 && m < 60) {
                 return h * 60 + m;
-            } catch (NumberFormatException ignored) {}
-        }
+            }
+        } catch (NumberFormatException ignored) {}
         return -1;
+    }
+
+    @Override
+    public String toString() {
+        return raw;
     }
 
     @Override
@@ -457,19 +557,13 @@ public final class OpenHours implements Whenable {
         return Objects.hash(raw, Arrays.hashCode(windows));
     }
 
-    @Override
-    public String toString() {
-        return raw;
-    }
-
-    // Jackson JSON Serializer & Deserializer
     public static final class Serializer extends JsonSerializer<OpenHours> {
         @Override
         public void serialize(OpenHours value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
             if (value == null) {
                 gen.writeNull();
             } else {
-                gen.writeString(value.getRaw());
+                gen.writeString(value.raw);
             }
         }
     }
