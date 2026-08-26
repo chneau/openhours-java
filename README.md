@@ -21,6 +21,55 @@ A high-performance, hardware-accelerated Java 26+ parser and interval-math evalu
 
 ## 🚀 Quick Start
 
+### Installation
+
+#### Gradle (Groovy)
+
+```groovy
+repositories {
+    mavenCentral()
+    maven { url 'https://jitpack.io' }
+}
+
+dependencies {
+    implementation 'com.github.chneau:openhours-java:v1.0.0'
+}
+```
+
+#### Gradle (Kotlin DSL)
+
+```kotlin
+repositories {
+    mavenCentral()
+    maven("https://jitpack.io")
+}
+
+dependencies {
+    implementation("com.github.chneau:openhours-java:v1.0.0")
+}
+```
+
+#### Maven (`pom.xml`)
+
+```xml
+<repositories>
+    <repository>
+        <id>jitpack.io</id>
+        <url>https://jitpack.io</url>
+    </repository>
+</repositories>
+
+<dependencies>
+    <dependency>
+        <groupId>com.github.chneau</groupId>
+        <artifactId>openhours-java</artifactId>
+        <version>v1.0.0</version>
+    </dependency>
+</dependencies>
+```
+
+---
+
 ### Usage Example
 
 ```java
