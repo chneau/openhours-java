@@ -10,6 +10,8 @@ java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(26)
     }
+    withSourcesJar()
+    withJavadocJar()
 }
 
 repositories {
@@ -26,6 +28,47 @@ test {
     useJUnitPlatform()
     testLogging {
         events "passed", "skipped", "failed"
+    }
+}
+
+javadoc {
+    if (options instanceof StandardJavadocDocletOptions) {
+        options.addStringOption('Xdoclint:none', '-quiet')
+    }
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            pom {
+                name = 'openhours'
+                description = 'High-performance OpenStreetMap opening_hours parser and evaluator in Java 26'
+                url = 'https://github.com/chneau/openhours-java'
+                licenses {
+                    license {
+                        name = 'MIT License'
+                        url = 'https://opensource.org/licenses/MIT'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'chneau'
+                        name = 'chneau'
+                    }
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/chneau/openhours-java")
+            credentials {
+                username = System.getenv("GITHUB_ACTOR") ?: ""
+                password = System.getenv("GITHUB_TOKEN") ?: ""
+            }
+        }
     }
 }
 
