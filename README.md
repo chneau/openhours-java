@@ -23,7 +23,9 @@ A high-performance, hardware-accelerated Java 26+ parser and interval-math evalu
 
 ### Installation
 
-#### Gradle (Groovy)
+#### Option 1: Via JitPack (Recommended for public use — zero auth needed)
+
+##### Gradle (Groovy)
 
 ```groovy
 repositories {
@@ -36,7 +38,7 @@ dependencies {
 }
 ```
 
-#### Gradle (Kotlin DSL)
+##### Gradle (Kotlin DSL)
 
 ```kotlin
 repositories {
@@ -49,7 +51,7 @@ dependencies {
 }
 ```
 
-#### Maven (`pom.xml`)
+##### Maven (`pom.xml`)
 
 ```xml
 <repositories>
@@ -67,6 +69,54 @@ dependencies {
     </dependency>
 </dependencies>
 ```
+
+---
+
+#### Option 2: Via GitHub Packages (`maven.pkg.github.com`)
+
+##### Gradle (Groovy)
+
+```groovy
+repositories {
+    mavenCentral()
+    maven {
+        url = uri("https://maven.pkg.github.com/chneau/openhours-java")
+        credentials {
+            username = project.findProperty("gpr.user") ?: System.getenv("GITHUB_ACTOR")
+            password = project.findProperty("gpr.key") ?: System.getenv("GITHUB_TOKEN")
+        }
+    }
+}
+
+dependencies {
+    implementation 'chneau:openhours:1.0.0'
+}
+```
+
+##### Maven (`pom.xml`)
+
+```xml
+<repositories>
+    <repository>
+        <id>github</id>
+        <url>https://maven.pkg.github.com/chneau/openhours-java</url>
+    </repository>
+</repositories>
+
+<dependencies>
+    <dependency>
+        <groupId>chneau</groupId>
+        <artifactId>openhours</artifactId>
+        <version>1.0.0</version>
+    </dependency>
+</dependencies>
+```
+
+---
+
+#### Option 3: Direct JAR Download
+
+Download the compiled `openhours-1.0.0.jar`, `-sources.jar`, and `-javadoc.jar` directly from [GitHub Releases](https://github.com/chneau/openhours-java/releases).
 
 ---
 
