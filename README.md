@@ -19,6 +19,29 @@ A high-performance, hardware-accelerated Java 26+ parser and interval-math evalu
 
 ---
 
+## 🧠 Optimizations & Engineering Architecture
+
+The Java (Java 26+) implementation is engineered for high throughput and minimal garbage collection pressure on modern HotSpot/Graal runtimes:
+
+1. **Dual State Representation**:
+   - **Disjoint Interval Records (`TimeWindow[]`)**: Java records (`record TimeWindow(int start, int end)`) stored in a sorted, contiguous array.
+   - **Hardware Bitmask (`long[158]`)**: A 10,080-bit packed bitmask representing each minute of the week. Point-in-time checks (`isOpen`) execute in $O(1)$ via single bit-shift instructions without traversing intervals.
+
+2. **$O(\log N)$ Interval Binary Search**:
+   - Duration queries (`getTimeToOpen`, `when`, `nextDur`, `nextDate`) use binary search over `windows` instead of looping through bitmask bits, completing in tens of nanoseconds.
+
+3. **Two-Tier Thread-Safe Caching Hierarchy**:
+   - **L1 ThreadLocal Cache**: A `ThreadLocal<Entry>` stores the last resolved expression and instance per thread, completely bypassing lock contention and hash calculations on repeated queries.
+   - **L2 Concurrent Intern Pool**: Uses `ConcurrentHashMap<String, OpenHours>` for lock-free multi-threaded deduplication of parsed expressions.
+
+4. **Zero-Allocation Stack & Buffer Tokenization**:
+   - Rule tokenization scans raw `char[]` and ASCII digits directly into fixed-size buffer arrays (`TimeRange[4]`, `TimeWindow[32]`), avoiding intermediate string/object allocations.
+
+5. **Record-Based Result Types**:
+   - Utilizes immutable Java records (`NextDurResult`, `NextDateResult`, `TimeWindow`) to maximize JIT escape analysis and scalar replacement optimizations.
+
+---
+
 ## 🚀 Quick Start
 
 ### Installation
