@@ -1,13 +1,37 @@
 plugins {
     id 'java-library'
+    id 'maven-publish'
 }
 
-group 'chneau'
+group = 'chneau'
+version = '1.0.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(26)
+    }
+}
 
 repositories {
-    jcenter()
+    mavenCentral()
 }
 
 dependencies {
-    testImplementation 'junit:junit:4.12'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.2'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+    }
+}
+
+tasks.register('bench', JavaExec) {
+    group = 'verification'
+    description = 'Runs the OpenHours benchmark suite'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'chneau.openhours.OpenHoursBenchmarks'
 }
