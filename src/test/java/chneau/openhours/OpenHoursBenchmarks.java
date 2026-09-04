@@ -53,7 +53,7 @@ public class OpenHoursBenchmarks {
         long alloc1 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - alloc0;
         double d1 = (t1 - t0) / 1_000_000.0;
         double b1 = (double) alloc1 / (iterations * 10 * benchScale);
-        out.printf("1. IsOpen (100k rolling calls):            %4.0f ms (%.3f us/op, %.1f B/op)%n", d1, ((t1 - t0) / 1000.0) / (iterations * 10 * benchScale), b1);
+        out.printf("1. IsOpen (100k rolling calls):            %4.0f ms (%.5f us/op, %.1f B/op)%n", d1, ((t1 - t0) / 1000.0) / (iterations * 10 * benchScale), b1);
 
         // 2. Benchmark IsOpen (Pure 1M calls with fixed timestamp)
         alloc0 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
@@ -65,7 +65,7 @@ public class OpenHoursBenchmarks {
         long alloc2 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - alloc0;
         double d2 = (t1 - t0) / 1_000_000.0;
         double b2 = (double) alloc2 / (1_000_000 * benchScale);
-        out.printf("2. IsOpen (1M pure calls):                 %4.0f ms (%.3f us/op, %.1f B/op)%n", d2, ((t1 - t0) / 1000.0) / (1_000_000 * benchScale), b2);
+        out.printf("2. IsOpen (1M pure calls):                 %4.0f ms (%.5f us/op, %.1f B/op)%n", d2, ((t1 - t0) / 1000.0) / (1_000_000 * benchScale), b2);
 
         // 3. Benchmark GetTimeToOpen (10k calls)
         alloc0 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
@@ -77,7 +77,7 @@ public class OpenHoursBenchmarks {
         long alloc3 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - alloc0;
         double d3 = (t1 - t0) / 1_000_000.0;
         double b3 = (double) alloc3 / (iterations * benchScale);
-        out.printf("3. GetTimeToOpen (10k calls):              %4.0f ms (%.3f us/op, %.1f B/op)%n", d3, ((t1 - t0) / 1000.0) / (iterations * benchScale), b3);
+        out.printf("3. GetTimeToOpen (10k calls):              %4.0f ms (%.5f us/op, %.1f B/op)%n", d3, ((t1 - t0) / 1000.0) / (iterations * benchScale), b3);
 
         // 4. Benchmark GetTimeToOpenForDuration 4h (10k calls)
         alloc0 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
@@ -89,7 +89,7 @@ public class OpenHoursBenchmarks {
         long alloc4 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - alloc0;
         double d4 = (t1 - t0) / 1_000_000.0;
         double b4 = (double) alloc4 / (iterations * benchScale);
-        out.printf("4. GetTimeToOpenForDuration 4h (10k calls):%4.0f ms (%.3f us/op, %.1f B/op)%n", d4, ((t1 - t0) / 1000.0) / (iterations * benchScale), b4);
+        out.printf("4. GetTimeToOpenForDuration 4h (10k calls):%4.0f ms (%.5f us/op, %.1f B/op)%n", d4, ((t1 - t0) / 1000.0) / (iterations * benchScale), b4);
 
         // 5. Benchmark When 4h (10k calls)
         alloc0 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
@@ -101,7 +101,7 @@ public class OpenHoursBenchmarks {
         long alloc5 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - alloc0;
         double d5 = (t1 - t0) / 1_000_000.0;
         double b5 = (double) alloc5 / (iterations * benchScale);
-        out.printf("5. When 4h (10k calls):                    %4.0f ms (%.3f us/op, %.1f B/op)%n", d5, ((t1 - t0) / 1000.0) / (iterations * benchScale), b5);
+        out.printf("5. When 4h (10k calls):                    %4.0f ms (%.5f us/op, %.1f B/op)%n", d5, ((t1 - t0) / 1000.0) / (iterations * benchScale), b5);
 
         // 6. Benchmark NextDur (10k calls)
         alloc0 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
@@ -113,7 +113,7 @@ public class OpenHoursBenchmarks {
         long alloc6 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - alloc0;
         double d6 = (t1 - t0) / 1_000_000.0;
         double b6 = (double) alloc6 / (iterations * benchScale);
-        out.printf("6. NextDur (10k calls):                    %4.0f ms (%.3f us/op, %.1f B/op)%n", d6, ((t1 - t0) / 1000.0) / (iterations * benchScale), b6);
+        out.printf("6. NextDur (10k calls):                    %4.0f ms (%.5f us/op, %.1f B/op)%n", d6, ((t1 - t0) / 1000.0) / (iterations * benchScale), b6);
 
         // 7. Benchmark NextDate (10k calls)
         alloc0 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
@@ -125,7 +125,7 @@ public class OpenHoursBenchmarks {
         long alloc7 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - alloc0;
         double d7 = (t1 - t0) / 1_000_000.0;
         double b7 = (double) alloc7 / (iterations * benchScale);
-        out.printf("7. NextDate (10k calls):                   %4.0f ms (%.3f us/op, %.1f B/op)%n", d7, ((t1 - t0) / 1000.0) / (iterations * benchScale), b7);
+        out.printf("7. NextDate (10k calls):                   %4.0f ms (%.5f us/op, %.1f B/op)%n", d7, ((t1 - t0) / 1000.0) / (iterations * benchScale), b7);
 
         // 8. Benchmark Parse Cached (1k calls)
         alloc0 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
@@ -137,7 +137,7 @@ public class OpenHoursBenchmarks {
         long alloc8 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - alloc0;
         double d8 = (t1 - t0) / 1_000_000.0;
         double b8 = (double) alloc8 / (1000 * benchScale);
-        out.printf("8. Parse Cached (1k calls):                %4.0f ms (%.3f us/op, %.1f B/op)%n", d8, ((t1 - t0) / 1000.0) / (1000 * benchScale), b8);
+        out.printf("8. Parse Cached (1k calls):                %4.0f ms (%.5f us/op, %.1f B/op)%n", d8, ((t1 - t0) / 1000.0) / (1000 * benchScale), b8);
 
         // 9. Benchmark JSON Deserialization (1k calls)
         alloc0 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
@@ -149,7 +149,7 @@ public class OpenHoursBenchmarks {
         long alloc9 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - alloc0;
         double d9 = (t1 - t0) / 1_000_000.0;
         double b9 = (double) alloc9 / (1000 * benchScale);
-        out.printf("9. JSON Deserialize (1k calls):            %4.0f ms (%.3f us/op, %.1f B/op)%n", d9, ((t1 - t0) / 1000.0) / (1000 * benchScale), b9);
+        out.printf("9. JSON Deserialize (1k calls):            %4.0f ms (%.5f us/op, %.1f B/op)%n", d9, ((t1 - t0) / 1000.0) / (1000 * benchScale), b9);
 
         // 10. Simulation Stress Test (5,000 unique objects)
         alloc0 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
