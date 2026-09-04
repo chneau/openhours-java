@@ -4,6 +4,7 @@
   "scripts": {
     "build": "./gradlew build",
     "test": "./gradlew test",
-    "bench": "./gradlew bench -q"
+    "bench": "./gradlew bench -q",
+    "start": "bun test"
   }
 }
