@@ -7,10 +7,56 @@ import java.lang.management.ManagementFactory;
 import com.sun.management.ThreadMXBean;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.function.IntConsumer;
 
 public class OpenHoursBenchmarks {
+
+    private static final double TARGET_MS = 500.0;
+
+    private record Measurement(double ms, long alloc, long total) {}
+
+    // Runs op(0..baseCount-1) repeatedly until a batch runs for at least
+    // TARGET_MS, then keeps taking batches until the measured region reaches
+    // TARGET_MS. Returns measured ms, bytes allocated, and total op count, so
+    // per-op numbers are not dominated by clock granularity.
+    private static Measurement measure(int baseCount, ThreadMXBean threadBean, IntConsumer op) {
+        long reps = 1;
+        while (true) {
+            long t0 = System.nanoTime();
+            for (long r = 0; r < reps; r++) {
+                for (int i = 0; i < baseCount; i++) {
+                    op.accept(i);
+                }
+            }
+            double el = (System.nanoTime() - t0) / 1_000_000.0;
+            if (el >= TARGET_MS || reps > (1L << 34) / baseCount) {
+                break;
+            }
+            long next = (long) (reps * TARGET_MS / el) + 1;
+            if (next <= reps) {
+                next = reps + 1;
+            }
+            reps = next;
+        }
+
+        long allocBefore = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
+        long t0 = System.nanoTime();
+        long total = 0;
+        while (true) {
+            for (long r = 0; r < reps; r++) {
+                for (int i = 0; i < baseCount; i++) {
+                    op.accept(i);
+                }
+            }
+            total += reps * baseCount;
+            if ((System.nanoTime() - t0) / 1_000_000.0 >= TARGET_MS) {
+                break;
+            }
+        }
+        double ms = (System.nanoTime() - t0) / 1_000_000.0;
+        long allocAfter = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
+        return new Measurement(ms, allocAfter - allocBefore, total);
+    }
 
     public static void main(String[] args) throws Exception {
         runBenchmarks(System.out);
@@ -30,8 +76,7 @@ public class OpenHoursBenchmarks {
         int iterations = 10000;
         var fourHours = Duration.ofHours(4);
         var mapper = new ObjectMapper();
-        // Multiply iteration counts by this factor so benchmarks run longer and
-        // yield more stable per-op timings across all workloads.
+        // Base workload sizes; each step is repeated until it runs for TARGET_MS.
         final int benchScale = 10;
 
         // Warm-up C2 JIT Compilation
@@ -44,131 +89,67 @@ public class OpenHoursBenchmarks {
         }
 
         // 1. Benchmark IsOpen (Rolling 100k calls)
-        long alloc0 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
-        long t0 = System.nanoTime();
-        for (int i = 0; i < iterations * 10 * benchScale; i++) {
-            oh.isOpen(start.plusMinutes(i));
-        }
-        long t1 = System.nanoTime();
-        long alloc1 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - alloc0;
-        double d1 = (t1 - t0) / 1_000_000.0;
-        double b1 = (double) alloc1 / (iterations * 10 * benchScale);
-        out.printf("1. IsOpen (100k rolling calls):            %4.0f ms (%.5f us/op, %.1f B/op)%n", d1, ((t1 - t0) / 1000.0) / (iterations * 10 * benchScale), b1);
+        Measurement m1 = measure(iterations * 10 * benchScale, threadBean, i -> oh.isOpen(start.plusMinutes(i)));
+        out.printf("1. IsOpen (100k rolling calls):            %4.0f ms (%.5f us/op, %.1f B/op)%n",
+                m1.ms(), m1.ms() * 1000.0 / m1.total(), (double) m1.alloc() / m1.total());
 
         // 2. Benchmark IsOpen (Pure 1M calls with fixed timestamp)
-        alloc0 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
-        t0 = System.nanoTime();
-        for (int i = 0; i < 1_000_000 * benchScale; i++) {
-            oh.isOpen(fixedTime);
-        }
-        t1 = System.nanoTime();
-        long alloc2 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - alloc0;
-        double d2 = (t1 - t0) / 1_000_000.0;
-        double b2 = (double) alloc2 / (1_000_000 * benchScale);
-        out.printf("2. IsOpen (1M pure calls):                 %4.0f ms (%.5f us/op, %.1f B/op)%n", d2, ((t1 - t0) / 1000.0) / (1_000_000 * benchScale), b2);
+        Measurement m2 = measure(1_000_000 * benchScale, threadBean, i -> oh.isOpen(fixedTime));
+        out.printf("2. IsOpen (1M pure calls):                 %4.0f ms (%.5f us/op, %.1f B/op)%n",
+                m2.ms(), m2.ms() * 1000.0 / m2.total(), (double) m2.alloc() / m2.total());
 
         // 3. Benchmark GetTimeToOpen (10k calls)
-        alloc0 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
-        t0 = System.nanoTime();
-        for (int i = 0; i < iterations * benchScale; i++) {
-            oh.getTimeToOpen(start.plusHours(i % 168));
-        }
-        t1 = System.nanoTime();
-        long alloc3 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - alloc0;
-        double d3 = (t1 - t0) / 1_000_000.0;
-        double b3 = (double) alloc3 / (iterations * benchScale);
-        out.printf("3. GetTimeToOpen (10k calls):              %4.0f ms (%.5f us/op, %.1f B/op)%n", d3, ((t1 - t0) / 1000.0) / (iterations * benchScale), b3);
+        Measurement m3 = measure(iterations * benchScale, threadBean, i -> oh.getTimeToOpen(start.plusHours(i % 168)));
+        out.printf("3. GetTimeToOpen (10k calls):              %4.0f ms (%.5f us/op, %.1f B/op)%n",
+                m3.ms(), m3.ms() * 1000.0 / m3.total(), (double) m3.alloc() / m3.total());
 
         // 4. Benchmark GetTimeToOpenForDuration 4h (10k calls)
-        alloc0 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
-        t0 = System.nanoTime();
-        for (int i = 0; i < iterations * benchScale; i++) {
-            oh.getTimeToOpenForDuration(start.plusHours(i % 168), fourHours);
-        }
-        t1 = System.nanoTime();
-        long alloc4 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - alloc0;
-        double d4 = (t1 - t0) / 1_000_000.0;
-        double b4 = (double) alloc4 / (iterations * benchScale);
-        out.printf("4. GetTimeToOpenForDuration 4h (10k calls):%4.0f ms (%.5f us/op, %.1f B/op)%n", d4, ((t1 - t0) / 1000.0) / (iterations * benchScale), b4);
+        Measurement m4 = measure(iterations * benchScale, threadBean, i -> oh.getTimeToOpenForDuration(start.plusHours(i % 168), fourHours));
+        out.printf("4. GetTimeToOpenForDuration 4h (10k calls):%4.0f ms (%.5f us/op, %.1f B/op)%n",
+                m4.ms(), m4.ms() * 1000.0 / m4.total(), (double) m4.alloc() / m4.total());
 
         // 5. Benchmark When 4h (10k calls)
-        alloc0 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
-        t0 = System.nanoTime();
-        for (int i = 0; i < iterations * benchScale; i++) {
-            oh.when(start.plusHours(i % 168), fourHours);
-        }
-        t1 = System.nanoTime();
-        long alloc5 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - alloc0;
-        double d5 = (t1 - t0) / 1_000_000.0;
-        double b5 = (double) alloc5 / (iterations * benchScale);
-        out.printf("5. When 4h (10k calls):                    %4.0f ms (%.5f us/op, %.1f B/op)%n", d5, ((t1 - t0) / 1000.0) / (iterations * benchScale), b5);
+        Measurement m5 = measure(iterations * benchScale, threadBean, i -> oh.when(start.plusHours(i % 168), fourHours));
+        out.printf("5. When 4h (10k calls):                    %4.0f ms (%.5f us/op, %.1f B/op)%n",
+                m5.ms(), m5.ms() * 1000.0 / m5.total(), (double) m5.alloc() / m5.total());
 
         // 6. Benchmark NextDur (10k calls)
-        alloc0 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
-        t0 = System.nanoTime();
-        for (int i = 0; i < iterations * benchScale; i++) {
-            oh.nextDur(start.plusHours(i % 168));
-        }
-        t1 = System.nanoTime();
-        long alloc6 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - alloc0;
-        double d6 = (t1 - t0) / 1_000_000.0;
-        double b6 = (double) alloc6 / (iterations * benchScale);
-        out.printf("6. NextDur (10k calls):                    %4.0f ms (%.5f us/op, %.1f B/op)%n", d6, ((t1 - t0) / 1000.0) / (iterations * benchScale), b6);
+        Measurement m6 = measure(iterations * benchScale, threadBean, i -> oh.nextDur(start.plusHours(i % 168)));
+        out.printf("6. NextDur (10k calls):                    %4.0f ms (%.5f us/op, %.1f B/op)%n",
+                m6.ms(), m6.ms() * 1000.0 / m6.total(), (double) m6.alloc() / m6.total());
 
         // 7. Benchmark NextDate (10k calls)
-        alloc0 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
-        t0 = System.nanoTime();
-        for (int i = 0; i < iterations * benchScale; i++) {
-            oh.nextDate(start.plusHours(i % 168));
-        }
-        t1 = System.nanoTime();
-        long alloc7 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - alloc0;
-        double d7 = (t1 - t0) / 1_000_000.0;
-        double b7 = (double) alloc7 / (iterations * benchScale);
-        out.printf("7. NextDate (10k calls):                   %4.0f ms (%.5f us/op, %.1f B/op)%n", d7, ((t1 - t0) / 1000.0) / (iterations * benchScale), b7);
+        Measurement m7 = measure(iterations * benchScale, threadBean, i -> oh.nextDate(start.plusHours(i % 168)));
+        out.printf("7. NextDate (10k calls):                   %4.0f ms (%.5f us/op, %.1f B/op)%n",
+                m7.ms(), m7.ms() * 1000.0 / m7.total(), (double) m7.alloc() / m7.total());
 
         // 8. Benchmark Parse Cached (1k calls)
-        alloc0 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
-        t0 = System.nanoTime();
-        for (int i = 0; i < 1000 * benchScale; i++) {
-            OpenHours.parse(complexExpr);
-        }
-        t1 = System.nanoTime();
-        long alloc8 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - alloc0;
-        double d8 = (t1 - t0) / 1_000_000.0;
-        double b8 = (double) alloc8 / (1000 * benchScale);
-        out.printf("8. Parse Cached (1k calls):                %4.0f ms (%.5f us/op, %.1f B/op)%n", d8, ((t1 - t0) / 1000.0) / (1000 * benchScale), b8);
+        Measurement m8 = measure(1000 * benchScale, threadBean, i -> OpenHours.parse(complexExpr));
+        out.printf("8. Parse Cached (1k calls):                %4.0f ms (%.5f us/op, %.1f B/op)%n",
+                m8.ms(), m8.ms() * 1000.0 / m8.total(), (double) m8.alloc() / m8.total());
 
         // 9. Benchmark JSON Deserialization (1k calls)
-        alloc0 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
-        t0 = System.nanoTime();
-        for (int i = 0; i < 1000 * benchScale; i++) {
-            mapper.readValue(jsonStr, OpenHours.class);
-        }
-        t1 = System.nanoTime();
-        long alloc9 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - alloc0;
-        double d9 = (t1 - t0) / 1_000_000.0;
-        double b9 = (double) alloc9 / (1000 * benchScale);
-        out.printf("9. JSON Deserialize (1k calls):            %4.0f ms (%.5f us/op, %.1f B/op)%n", d9, ((t1 - t0) / 1000.0) / (1000 * benchScale), b9);
+        Measurement m9 = measure(1000 * benchScale, threadBean, i -> {
+            try {
+                mapper.readValue(jsonStr, OpenHours.class);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+        out.printf("9. JSON Deserialize (1k calls):            %4.0f ms (%.5f us/op, %.1f B/op)%n",
+                m9.ms(), m9.ms() * 1000.0 / m9.total(), (double) m9.alloc() / m9.total());
 
         // 10. Simulation Stress Test (5,000 unique objects)
-        alloc0 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
-        t0 = System.nanoTime();
-        int stressCount = 5000 * benchScale;
-        List<OpenHours> locations = new ArrayList<>(stressCount);
-        for (int i = 0; i < stressCount; i++) {
+        Measurement m10 = measure(5000 * benchScale, threadBean, i -> {
             int hStart = 8 + (i % 60) / 60;
             int mStart = i % 60;
             int hEnd = 17 + (i % 60) / 60;
             int mEnd = i % 60;
             String expr = String.format("Mo-Fr %02d:%02d-%02d:%02d", hStart, mStart, hEnd, mEnd);
-            locations.add(OpenHours.parse(expr));
-        }
-        t1 = System.nanoTime();
-        long alloc10 = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - alloc0;
-        double d10 = (t1 - t0) / 1_000_000.0;
-        double b10 = (double) alloc10 / stressCount;
-        out.printf("10. Stress Test (5,000 unique objects):    %4.0f ms (%.4f ms/obj, %.1f B/obj)%n", d10, d10 / stressCount, b10);
+            OpenHours.parse(expr);
+        });
+        out.printf("10. Stress Test (5,000 unique objects):    %4.0f ms (%.4f ms/obj, %.1f B/obj)%n",
+                m10.ms(), m10.ms() / m10.total(), (double) m10.alloc() / m10.total());
         out.println("========================================================");
     }
 }
