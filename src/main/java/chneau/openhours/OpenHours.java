@@ -123,9 +123,7 @@ public final class OpenHours implements Whenable {
         if (isAlwaysOpen()) return true;
 
         int weekMinute = getWeekMinute(dt);
-        int word = weekMinute >> 6;
-        long mask = 1L << (weekMinute & 63);
-        return (bitmask[word] & mask) != 0;
+        return (bitmask[weekMinute >> 6] & (1L << (weekMinute & 63))) != 0;
     }
 
     public boolean match(LocalDateTime dt) {
@@ -150,22 +148,32 @@ public final class OpenHours implements Whenable {
             diffMin = (MINUTES_PER_WEEK - t) + windows[0].start;
         }
 
-        int subMinuteSeconds = from.getSecond();
-        int subMinuteNanos = from.getNano();
-        return Duration.ofMinutes(diffMin).minusSeconds(subMinuteSeconds).minusNanos(subMinuteNanos);
+        return waitDuration(diffMin, from);
     }
 
     public Duration getTimeToOpenForDuration(LocalDateTime from, Duration required) {
         if (windows.length == 0) return null;
         long reqNanos = required.toNanos();
         if (reqNanos <= 0) return Duration.ZERO;
+        long n = nanosToOpenForDuration(from, reqNanos, (int) ((required.toSeconds() + 59) / 60));
+        if (n < 0) return null;
+        return n == 0 ? Duration.ZERO : Duration.ofNanos(n);
+    }
 
-        int reqMinutes = (int) ((required.toSeconds() + 59) / 60);
-        if (reqMinutes > MINUTES_PER_WEEK) return null;
-        if (isAlwaysOpen()) return Duration.ZERO;
+    /**
+     * Core of {@link #getTimeToOpenForDuration}: returns the wait in nanoseconds,
+     * {@code 0} if the required duration already fits starting now, or {@code -1}
+     * if it never fits. Kept allocation-free so {@link #when} can add the wait
+     * directly with {@link LocalDateTime#plusNanos(long)}.
+     */
+    private long nanosToOpenForDuration(LocalDateTime from, long reqNanos, int reqMinutes) {
+        if (windows.length == 0) return -1;
+        if (reqNanos <= 0) return 0;
+        if (reqMinutes > MINUTES_PER_WEEK) return -1;
+        if (isAlwaysOpen()) return 0;
 
         int t = getWeekMinute(from);
-        long subDurNanos = from.getSecond() * 1_000_000_000L + from.getNano();
+        long subDurNanos = subNanos(from);
         int startIdx = findFirstWindowStartingAtOrAfter(t);
 
         int n = windows.length;
@@ -181,14 +189,11 @@ public final class OpenHours implements Whenable {
             if (t >= w.start) {
                 long remNanos = ((long) (effectiveEnd - t)) * 60_000_000_000L - subDurNanos;
                 if (remNanos >= reqNanos) {
-                    return Duration.ZERO;
+                    return 0;
                 }
             } else {
                 if (effectiveEnd - w.start >= reqMinutes) {
-                    int diffMin = w.start - t;
-                    return Duration.ofMinutes(diffMin)
-                            .minusSeconds(from.getSecond())
-                            .minusNanos(from.getNano());
+                    return (long) (w.start - t) * 60_000_000_000L - subDurNanos;
                 }
             }
         }
@@ -200,22 +205,35 @@ public final class OpenHours implements Whenable {
                     : w.end;
 
             if (effectiveEnd - w.start >= reqMinutes) {
-                int diffMin = (MINUTES_PER_WEEK - t) + w.start;
-                return Duration.ofMinutes(diffMin)
-                        .minusSeconds(from.getSecond())
-                        .minusNanos(from.getNano());
+                return (long) ((MINUTES_PER_WEEK - t) + w.start) * 60_000_000_000L - subDurNanos;
             }
         }
 
-        return null;
+        return -1;
     }
 
     @Override
     public LocalDateTime when(LocalDateTime from, Duration duration) {
-        Duration wait = getTimeToOpenForDuration(from, duration);
-        if (wait == null) return null;
-        if (wait.isZero()) return from;
-        return from.plus(wait);
+        if (windows.length == 0) return null;
+        long reqNanos = duration.toNanos();
+        long n = nanosToOpenForDuration(from, reqNanos,
+                reqNanos <= 0 ? 0 : (int) ((duration.toSeconds() + 59) / 60));
+        if (n < 0) return null;
+        if (n == 0) return from;
+        return from.plusNanos(n);
+    }
+
+    /** Sub-minute part of {@code from} expressed in nanoseconds. */
+    private static long subNanos(LocalDateTime from) {
+        return from.getSecond() * 1_000_000_000L + from.getNano();
+    }
+
+    /**
+     * Equivalent to {@code Duration.ofMinutes(diffMin).minusSeconds(from.getSecond())
+     * .minusNanos(from.getNano())} in a single allocation.
+     */
+    private static Duration waitDuration(int diffMin, LocalDateTime from) {
+        return Duration.ofNanos(diffMin * 60_000_000_000L - subNanos(from));
     }
 
     public LocalDateTime getCurrentShiftEnd(LocalDateTime dt) {
@@ -234,9 +252,7 @@ public final class OpenHours implements Whenable {
             diffMin = (MINUTES_PER_WEEK - t) + windows[0].end;
         }
 
-        return dt.plusMinutes(diffMin)
-                .minusSeconds(dt.getSecond())
-                .minusNanos(dt.getNano());
+        return dt.plusNanos((long) diffMin * 60_000_000_000L - subNanos(dt));
     }
 
     public NextDurResult nextDur(LocalDateTime dt) {
@@ -254,37 +270,53 @@ public final class OpenHours implements Whenable {
                 if (idx == windows.length - 1 && w.end == MINUTES_PER_WEEK && windows[0].start == 0) {
                     diffMin = (MINUTES_PER_WEEK - t) + windows[0].end;
                 }
-                Duration dur = Duration.ofMinutes(diffMin)
-                        .minusSeconds(dt.getSecond())
-                        .minusNanos(dt.getNano());
-                return new NextDurResult(true, dur);
+                return new NextDurResult(true, waitDuration(diffMin, dt));
             }
             // Currently closed, opens at w.start
-            int diffMin = w.start - t;
-            Duration dur = Duration.ofMinutes(diffMin)
-                    .minusSeconds(dt.getSecond())
-                    .minusNanos(dt.getNano());
-            return new NextDurResult(false, dur);
+            return new NextDurResult(false, waitDuration(w.start - t, dt));
         }
 
         // Currently closed, opens at windows[0].start next week
-        int diffMin = (MINUTES_PER_WEEK - t) + windows[0].start;
-        Duration dur = Duration.ofMinutes(diffMin)
-                .minusSeconds(dt.getSecond())
-                .minusNanos(dt.getNano());
-        return new NextDurResult(false, dur);
+        return new NextDurResult(false, waitDuration((MINUTES_PER_WEEK - t) + windows[0].start, dt));
     }
 
     public NextDateResult nextDate(LocalDateTime dt) {
-        NextDurResult res = nextDur(dt);
-        LocalDateTime next = res.duration.isZero() ? dt : dt.plus(res.duration);
-        return new NextDateResult(res.isOpen, next);
+        if (windows.length == 0) return new NextDateResult(false, dt);
+        if (isAlwaysOpen()) return new NextDateResult(true, dt.plusDays(365));
+
+        int t = getWeekMinute(dt);
+        int idx = findFirstWindowStartingAtOrAfter(t);
+
+        int diffMin;
+        boolean open;
+        if (idx < windows.length) {
+            TimeWindow w = windows[idx];
+            if (w.start <= t) {
+                // Currently open
+                diffMin = w.end - t;
+                if (idx == windows.length - 1 && w.end == MINUTES_PER_WEEK && windows[0].start == 0) {
+                    diffMin = (MINUTES_PER_WEEK - t) + windows[0].end;
+                }
+                open = true;
+            } else {
+                // Currently closed, opens at w.start
+                diffMin = w.start - t;
+                open = false;
+            }
+        } else {
+            // Currently closed, opens at windows[0].start next week
+            diffMin = (MINUTES_PER_WEEK - t) + windows[0].start;
+            open = false;
+        }
+
+        long nanos = (long) diffMin * 60_000_000_000L - subNanos(dt);
+        return new NextDateResult(open, nanos == 0 ? dt : dt.plusNanos(nanos));
     }
 
     private static int getWeekMinute(LocalDateTime dt) {
-        long localSecs = dt.toEpochSecond(java.time.ZoneOffset.UTC);
-        int weekMinute = (int) (((localSecs / 60L) + 4320L) % MINUTES_PER_WEEK);
-        return weekMinute >= 0 ? weekMinute : weekMinute + MINUTES_PER_WEEK;
+        // Equivalent to ((dt.toEpochSecond(UTC) / 60) + 4320) mod 10080, but computed
+        // from the calendar fields directly, avoiding epoch conversion and division.
+        return (dt.getDayOfWeek().getValue() - 1) * 1440 + dt.getHour() * 60 + dt.getMinute();
     }
 
     private int findFirstWindowStartingAtOrAfter(int t) {
