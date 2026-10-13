@@ -79,6 +79,21 @@ public final class OpenHours implements Whenable {
     private final TimeWindow[] windows;
     private final long[] bitmask;
 
+    /** Bit 15 of a table entry: the schedule is open at that minute. */
+    private static final int TBL_OPEN = 0x8000;
+    /** Low 14 bits of a table entry: minutes until the next open/closed transition. */
+    private static final int TBL_DELTA = 0x3FFF;
+
+    /**
+     * Lazily built per-minute successor table: {@code tbl[m] = (open ? 0x8000 : 0) | d}
+     * where {@code d} is the number of minutes from week-minute {@code m} to the next
+     * state transition (cyclic). Lets {@link #getTimeToOpen}, {@link #nextDur} and
+     * {@link #nextDate} answer with a single load instead of a window search. Published
+     * through a {@code volatile} field so the interned, thread-shared instance hands a
+     * fully-built array to every reader; a benign duplicate build is acceptable.
+     */
+    private volatile int[] deltaTable;
+
     private static OpenHours createAlwaysOpen() {
         long[] bm = new long[BITMASK_WORDS];
         Arrays.fill(bm, ~0L);
@@ -164,20 +179,9 @@ public final class OpenHours implements Whenable {
         if (isAlwaysOpen()) return Duration.ZERO;
 
         int t = getWeekMinute(from);
-        int idx = findFirstWindowStartingAtOrAfter(t);
-
-        int diffMin;
-        if (idx < windows.length) {
-            TimeWindow w = windows[idx];
-            if (w.start <= t) {
-                return Duration.ZERO;
-            }
-            diffMin = w.start - t;
-        } else {
-            diffMin = (MINUTES_PER_WEEK - t) + windows[0].start;
-        }
-
-        return waitDuration(diffMin, from);
+        int entry = deltaTable()[t];
+        if ((entry & TBL_OPEN) != 0) return Duration.ZERO;
+        return waitDuration(entry & TBL_DELTA, from);
     }
 
     public Duration getTimeToOpenForDuration(LocalDateTime from, Duration required) {
@@ -208,12 +212,15 @@ public final class OpenHours implements Whenable {
         int n = windows.length;
         boolean lastEndsAtWeekEnd = windows[n - 1].end == MINUTES_PER_WEEK;
         boolean firstStartsAtZero = windows[0].start == 0;
+        // Only the final window can wrap; precompute its (possibly extended) end once so
+        // the two loops do not re-evaluate the wrap predicate per iteration.
+        int lastEffectiveEnd = (lastEndsAtWeekEnd && firstStartsAtZero)
+                ? MINUTES_PER_WEEK + windows[0].end
+                : windows[n - 1].end;
 
         for (int i = startIdx; i < n; i++) {
             TimeWindow w = windows[i];
-            int effectiveEnd = (i == n - 1 && lastEndsAtWeekEnd && firstStartsAtZero)
-                    ? MINUTES_PER_WEEK + windows[0].end
-                    : w.end;
+            int effectiveEnd = (i == n - 1) ? lastEffectiveEnd : w.end;
 
             if (t >= w.start) {
                 long remNanos = ((long) (effectiveEnd - t)) * 60_000_000_000L - subDurNanos;
@@ -229,9 +236,7 @@ public final class OpenHours implements Whenable {
 
         for (int i = 0; i <= startIdx && i < n; i++) {
             TimeWindow w = windows[i];
-            int effectiveEnd = (i == n - 1 && lastEndsAtWeekEnd && firstStartsAtZero)
-                    ? MINUTES_PER_WEEK + windows[0].end
-                    : w.end;
+            int effectiveEnd = (i == n - 1) ? lastEffectiveEnd : w.end;
 
             if (effectiveEnd - w.start >= reqMinutes) {
                 return (long) ((MINUTES_PER_WEEK - t) + w.start) * 60_000_000_000L - subDurNanos;
@@ -289,24 +294,9 @@ public final class OpenHours implements Whenable {
         if (isAlwaysOpen()) return new NextDurResult(true, Duration.ofDays(365));
 
         int t = getWeekMinute(dt);
-        int idx = findFirstWindowStartingAtOrAfter(t);
-
-        if (idx < windows.length) {
-            TimeWindow w = windows[idx];
-            if (w.start <= t) {
-                // Currently open
-                int diffMin = w.end - t;
-                if (idx == windows.length - 1 && w.end == MINUTES_PER_WEEK && windows[0].start == 0) {
-                    diffMin = (MINUTES_PER_WEEK - t) + windows[0].end;
-                }
-                return new NextDurResult(true, waitDuration(diffMin, dt));
-            }
-            // Currently closed, opens at w.start
-            return new NextDurResult(false, waitDuration(w.start - t, dt));
-        }
-
-        // Currently closed, opens at windows[0].start next week
-        return new NextDurResult(false, waitDuration((MINUTES_PER_WEEK - t) + windows[0].start, dt));
+        int entry = deltaTable()[t];
+        boolean open = (entry & TBL_OPEN) != 0;
+        return new NextDurResult(open, waitDuration(entry & TBL_DELTA, dt));
     }
 
     public NextDateResult nextDate(LocalDateTime dt) {
@@ -314,32 +304,64 @@ public final class OpenHours implements Whenable {
         if (isAlwaysOpen()) return new NextDateResult(true, dt.plusDays(365));
 
         int t = getWeekMinute(dt);
-        int idx = findFirstWindowStartingAtOrAfter(t);
-
-        int diffMin;
-        boolean open;
-        if (idx < windows.length) {
-            TimeWindow w = windows[idx];
-            if (w.start <= t) {
-                // Currently open
-                diffMin = w.end - t;
-                if (idx == windows.length - 1 && w.end == MINUTES_PER_WEEK && windows[0].start == 0) {
-                    diffMin = (MINUTES_PER_WEEK - t) + windows[0].end;
-                }
-                open = true;
-            } else {
-                // Currently closed, opens at w.start
-                diffMin = w.start - t;
-                open = false;
-            }
-        } else {
-            // Currently closed, opens at windows[0].start next week
-            diffMin = (MINUTES_PER_WEEK - t) + windows[0].start;
-            open = false;
-        }
+        int entry = deltaTable()[t];
+        boolean open = (entry & TBL_OPEN) != 0;
+        int diffMin = entry & TBL_DELTA;
 
         long nanos = (long) diffMin * 60_000_000_000L - subNanos(dt);
         return new NextDateResult(open, nanos == 0 ? dt : dt.plusNanos(nanos));
+    }
+
+    /**
+     * Returns the lazily-built per-minute successor table, building (and safely
+     * publishing) it on first use. Never called for empty or 24/7 schedules, which
+     * are short-circuited by every caller.
+     */
+    private int[] deltaTable() {
+        int[] t = deltaTable;
+        if (t == null) {
+            t = buildDeltaTable();
+            deltaTable = t;
+        }
+        return t;
+    }
+
+    /**
+     * Builds the successor table by locating every minute where the open state changes
+     * and filling each constant-state run in a single backward pass, so the cost is
+     * O(MINUTES_PER_WEEK) regardless of the number of windows.
+     */
+    private int[] buildDeltaTable() {
+        final long[] bm = this.bitmask;
+        final int[] table = new int[MINUTES_PER_WEEK];
+        final int[] trans = new int[MINUTES_PER_WEEK];
+        int tn = 0;
+        boolean prev = bitOpen(bm, MINUTES_PER_WEEK - 1);
+        for (int m = 0; m < MINUTES_PER_WEEK; m++) {
+            boolean cur = bitOpen(bm, m);
+            if (cur != prev) {
+                trans[tn++] = m;
+            }
+            prev = cur;
+        }
+
+        if (tn == 0) {
+            // Constant state; only reachable for a 24/7 (short-circuited) or empty
+            // schedule, kept for safety. Fill with a full-week delta.
+            int val = (bitOpen(bm, 0) ? TBL_OPEN : 0) | MINUTES_PER_WEEK;
+            Arrays.fill(table, val);
+            return table;
+        }
+
+        for (int i = 0; i < tn; i++) {
+            int start = trans[i];
+            int end = (i + 1 < tn) ? trans[i + 1] : trans[0] + MINUTES_PER_WEEK;
+            int openBit = bitOpen(bm, start) ? TBL_OPEN : 0;
+            for (int m = start; m < end; m++) {
+                table[m % MINUTES_PER_WEEK] = openBit | (end - m);
+            }
+        }
+        return table;
     }
 
     /**
@@ -417,7 +439,10 @@ public final class OpenHours implements Whenable {
     }
 
     private static OpenHours parseUncached(String expression) {
-        boolean[] minutes = new boolean[MINUTES_PER_WEEK];
+        // Accumulate open minutes directly into the week bitmask (158 words) instead of a
+        // one-byte-per-minute boolean[10080] scratch array, keeping the per-parse cost
+        // proportional to the number of rules rather than to MINUTES_PER_WEEK.
+        long[] bm = new long[BITMASK_WORDS];
         int len = expression.length();
         int ruleStart = 0;
 
@@ -464,6 +489,7 @@ public final class OpenHours implements Whenable {
                 numIntervals = 1;
             }
 
+            boolean value = !isOff;
             for (int d = 0; d < numDays; d++) {
                 int day = days[d];
                 for (int inter = 0; inter < numIntervals; inter++) {
@@ -471,63 +497,134 @@ public final class OpenHours implements Whenable {
                     int end = intervals[inter * 2 + 1];
                     int startMin = day * 1440 + start;
 
+                    // Same three cases as a naive per-minute loop, expressed as one
+                    // half-open minute range [startMin, hi); applyMinuteRange wraps it
+                    // around the week boundary the same way `m % MINUTES_PER_WEEK` did.
+                    int hi;
                     if (end > 1440) {
-                        int actualEnd = day * 1440 + end;
-                        for (int m = startMin; m < actualEnd; m++) {
-                            minutes[m % MINUTES_PER_WEEK] = !isOff;
-                        }
+                        hi = day * 1440 + end;
                     } else if (start > end) {
-                        int actualEnd = (day + 1) * 1440 + end;
-                        for (int m = startMin; m < actualEnd; m++) {
-                            minutes[m % MINUTES_PER_WEEK] = !isOff;
-                        }
+                        hi = (day + 1) * 1440 + end;
                     } else {
-                        int endMin = day * 1440 + end;
-                        for (int m = startMin; m < endMin; m++) {
-                            minutes[m % MINUTES_PER_WEEK] = !isOff;
-                        }
+                        hi = day * 1440 + end;
+                    }
+                    applyMinuteRange(bm, startMin, hi, value);
+                }
+            }
+        }
+
+        // Derive disjoint TimeWindows from the baked bitmask, one word at a time: all-zero
+        // and all-one words are handled in O(1), and only a word that straddles a window
+        // boundary is walked bit-by-bit. This replaces the former second full pass over the
+        // boolean scratch array.
+        TimeWindow[] winArray = buildWindows(bm);
+
+        return new OpenHours(expression, winArray, bm);
+    }
+
+    /**
+     * Builds the disjoint, ascending window list by scanning the week bitmask word by word.
+     * Equivalent to a bit-by-bit scan of a {@code boolean[MINUTES_PER_WEEK]}, but skips
+     * 64 minutes at a time whenever a word is all-zero or all-one.
+     */
+    private static TimeWindow[] buildWindows(long[] bm) {
+        int count = 0;
+        boolean inRun = false;
+        for (int wi = 0; wi < BITMASK_WORDS; wi++) {
+            long w = bm[wi];
+            if (w == 0) {
+                if (inRun) { count++; inRun = false; }
+            } else if (w == -1L) {
+                inRun = true;
+            } else {
+                for (int bit = 0; bit < 64; bit++) {
+                    if (((w >>> bit) & 1L) != 0) {
+                        inRun = true;
+                    } else if (inRun) {
+                        count++;
+                        inRun = false;
                     }
                 }
             }
         }
+        if (inRun) count++;
 
-        // Bake into disjoint TimeWindows & Bitmask
-        long[] bm = new long[BITMASK_WORDS];
-        int count = 0;
-        int inWindowStart = -1;
-
-        for (int i = 0; i < MINUTES_PER_WEEK; i++) {
-            if (minutes[i]) {
-                bm[i >> 6] |= (1L << (i & 63));
-                if (inWindowStart == -1) inWindowStart = i;
-            } else {
-                if (inWindowStart != -1) {
-                    count++;
-                    inWindowStart = -1;
-                }
-            }
-        }
-        if (inWindowStart != -1) count++;
-
-        TimeWindow[] winArray = new TimeWindow[count];
+        TimeWindow[] out = new TimeWindow[count];
         int idx = 0;
-        inWindowStart = -1;
-
-        for (int i = 0; i < MINUTES_PER_WEEK; i++) {
-            if (minutes[i]) {
-                if (inWindowStart == -1) inWindowStart = i;
+        int runStart = -1;
+        for (int wi = 0; wi < BITMASK_WORDS; wi++) {
+            long w = bm[wi];
+            int base = wi << 6;
+            if (w == 0) {
+                if (runStart != -1) {
+                    out[idx++] = new TimeWindow(runStart, base);
+                    runStart = -1;
+                }
+            } else if (w == -1L) {
+                if (runStart == -1) runStart = base;
             } else {
-                if (inWindowStart != -1) {
-                    winArray[idx++] = new TimeWindow(inWindowStart, i);
-                    inWindowStart = -1;
+                for (int bit = 0; bit < 64; bit++) {
+                    if (((w >>> bit) & 1L) != 0) {
+                        if (runStart == -1) runStart = base + bit;
+                    } else if (runStart != -1) {
+                        out[idx++] = new TimeWindow(runStart, base + bit);
+                        runStart = -1;
+                    }
                 }
             }
         }
-        if (inWindowStart != -1) {
-            winArray[idx] = new TimeWindow(inWindowStart, MINUTES_PER_WEEK);
+        if (runStart != -1) {
+            out[idx] = new TimeWindow(runStart, MINUTES_PER_WEEK);
         }
+        return out;
+    }
 
-        return new OpenHours(expression, winArray, bm);
+    /**
+     * Applies {@code value} to every minute in the half-open range {@code [lo, hi)},
+     * wrapping around the week boundary exactly like {@code m % MINUTES_PER_WEEK}.
+     */
+    private static void applyMinuteRange(long[] bm, int lo, int hi, boolean value) {
+        if (lo >= hi) return;
+        int n = hi - lo; // always < MINUTES_PER_WEEK by construction
+        int loWrapped = lo % MINUTES_PER_WEEK;
+        if (loWrapped + n <= MINUTES_PER_WEEK) {
+            applyBitRange(bm, loWrapped, loWrapped + n, value);
+        } else {
+            applyBitRange(bm, loWrapped, MINUTES_PER_WEEK, value);
+            applyBitRange(bm, 0, loWrapped + n - MINUTES_PER_WEEK, value);
+        }
+    }
+
+    /** Sets or clears every bit in {@code [lo, hi)}; requires {@code hi <= MINUTES_PER_WEEK}. */
+    private static void applyBitRange(long[] bm, int lo, int hi, boolean value) {
+        if (lo >= hi) return;
+        int firstWord = lo >> 6;
+        int lastWord = (hi - 1) >> 6;
+        if (firstWord == lastWord) {
+            long mask = bitMask(lo & 63, hi - lo);
+            if (value) bm[firstWord] |= mask;
+            else bm[firstWord] &= ~mask;
+            return;
+        }
+        long headMask = -1L << (lo & 63);
+        if (value) bm[firstWord] |= headMask;
+        else bm[firstWord] &= ~headMask;
+        for (int w = firstWord + 1; w < lastWord; w++) {
+            bm[w] = value ? -1L : 0L;
+        }
+        long tailMask = bitMask(0, ((hi - 1) & 63) + 1);
+        if (value) bm[lastWord] |= tailMask;
+        else bm[lastWord] &= ~tailMask;
+    }
+
+    /** {@code len} contiguous set bits starting at bit {@code offset} (both within 0..64). */
+    private static long bitMask(int offset, int len) {
+        if (len == 64) return -1L;
+        return ((1L << len) - 1) << offset;
+    }
+
+    private static boolean bitOpen(long[] bm, int minute) {
+        return (bm[minute >> 6] & (1L << (minute & 63))) != 0;
     }
 
     private static int parseDaysFast(String token, int[] days, int numDays) {
