@@ -149,9 +149,8 @@ public final class OpenHours implements Whenable {
      * $O(1)$ scalar bit testing evaluating in ~2.0 nanoseconds.
      */
     public boolean isOpen(LocalDateTime dt) {
-        if (windows.length == 0) return false;
-        if (isAlwaysOpen()) return true;
-
+        // No empty / always-open guards: the baked bitmask is all-zero for an
+        // empty schedule and all-one for 24/7, so the bit test is already exact.
         int weekMinute = getWeekMinute(dt);
         return (bitmask[weekMinute >> 6] & (1L << (weekMinute & 63))) != 0;
     }
@@ -228,7 +227,7 @@ public final class OpenHours implements Whenable {
             }
         }
 
-        for (int i = 0; i < n; i++) {
+        for (int i = 0; i <= startIdx && i < n; i++) {
             TimeWindow w = windows[i];
             int effectiveEnd = (i == n - 1 && lastEndsAtWeekEnd && firstStartsAtZero)
                     ? MINUTES_PER_WEEK + windows[0].end
