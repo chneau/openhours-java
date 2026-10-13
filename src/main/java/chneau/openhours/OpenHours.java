@@ -45,13 +45,20 @@ public final class OpenHours implements Whenable {
     private static final ThreadLocal<Entry> FAST_CACHE = ThreadLocal.withInitial(() -> new Entry("", EMPTY));
 
     private static void fastCacheSet(String trimmed, OpenHours val) {
-        FAST_CACHE.set(new Entry(trimmed, val));
+        // Mutate the calling thread's existing slot instead of publishing a fresh
+        // {@code Entry}: the slot is thread-confined, so this saves one allocation on
+        // every intern-cache fill (the common case when alternating many distinct
+        // expressions) while a hit observes exactly the same key/value pair.
+        Entry e = FAST_CACHE.get();
+        e.key = trimmed;
+        e.val = val;
+        e.keyChars = null;
     }
 
     /** Thread-local one-entry parse cache (the {@code Entry} is never shared across threads). */
     private static final class Entry {
-        final String key;
-        final OpenHours val;
+        String key;
+        OpenHours val;
         /** Lazily materialized so the plain parse path never pays for it. */
         private char[] keyChars;
 
