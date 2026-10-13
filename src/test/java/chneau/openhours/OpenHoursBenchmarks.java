@@ -88,8 +88,22 @@ public class OpenHoursBenchmarks {
             mapper.readValue(jsonStr, OpenHours.class);
         }
 
+        // Precompute the rolling timelines once, OUTSIDE the measured region
+        // (matching the Go/Rust/C++/Zig harnesses). LocalDateTime is immutable,
+        // so building it inside the timed loop would charge java.time object
+        // allocation to the library; the queries must be measured on their own.
+        final int rollingCount = iterations * 10 * benchScale;
+        LocalDateTime[] minuteTimeline = new LocalDateTime[rollingCount];
+        for (int i = 0; i < rollingCount; i++) {
+            minuteTimeline[i] = start.plusMinutes(i);
+        }
+        LocalDateTime[] hourTimeline = new LocalDateTime[168];
+        for (int i = 0; i < 168; i++) {
+            hourTimeline[i] = start.plusHours(i);
+        }
+
         // 1. Benchmark IsOpen (Rolling 100k calls)
-        Measurement m1 = measure(iterations * 10 * benchScale, threadBean, i -> oh.isOpen(start.plusMinutes(i)));
+        Measurement m1 = measure(rollingCount, threadBean, i -> oh.isOpen(minuteTimeline[i]));
         out.printf("1. IsOpen (100k rolling calls):            %4.0f ms (%.5f us/op, %.1f B/op)%n",
                 m1.ms(), m1.ms() * 1000.0 / m1.total(), (double) m1.alloc() / m1.total());
 
@@ -99,27 +113,27 @@ public class OpenHoursBenchmarks {
                 m2.ms(), m2.ms() * 1000.0 / m2.total(), (double) m2.alloc() / m2.total());
 
         // 3. Benchmark GetTimeToOpen (10k calls)
-        Measurement m3 = measure(iterations * benchScale, threadBean, i -> oh.getTimeToOpen(start.plusHours(i % 168)));
+        Measurement m3 = measure(iterations * benchScale, threadBean, i -> oh.getTimeToOpen(hourTimeline[i % 168]));
         out.printf("3. GetTimeToOpen (10k calls):              %4.0f ms (%.5f us/op, %.1f B/op)%n",
                 m3.ms(), m3.ms() * 1000.0 / m3.total(), (double) m3.alloc() / m3.total());
 
         // 4. Benchmark GetTimeToOpenForDuration 4h (10k calls)
-        Measurement m4 = measure(iterations * benchScale, threadBean, i -> oh.getTimeToOpenForDuration(start.plusHours(i % 168), fourHours));
+        Measurement m4 = measure(iterations * benchScale, threadBean, i -> oh.getTimeToOpenForDuration(hourTimeline[i % 168], fourHours));
         out.printf("4. GetTimeToOpenForDuration 4h (10k calls):%4.0f ms (%.5f us/op, %.1f B/op)%n",
                 m4.ms(), m4.ms() * 1000.0 / m4.total(), (double) m4.alloc() / m4.total());
 
         // 5. Benchmark When 4h (10k calls)
-        Measurement m5 = measure(iterations * benchScale, threadBean, i -> oh.when(start.plusHours(i % 168), fourHours));
+        Measurement m5 = measure(iterations * benchScale, threadBean, i -> oh.when(hourTimeline[i % 168], fourHours));
         out.printf("5. When 4h (10k calls):                    %4.0f ms (%.5f us/op, %.1f B/op)%n",
                 m5.ms(), m5.ms() * 1000.0 / m5.total(), (double) m5.alloc() / m5.total());
 
         // 6. Benchmark NextDur (10k calls)
-        Measurement m6 = measure(iterations * benchScale, threadBean, i -> oh.nextDur(start.plusHours(i % 168)));
+        Measurement m6 = measure(iterations * benchScale, threadBean, i -> oh.nextDur(hourTimeline[i % 168]));
         out.printf("6. NextDur (10k calls):                    %4.0f ms (%.5f us/op, %.1f B/op)%n",
                 m6.ms(), m6.ms() * 1000.0 / m6.total(), (double) m6.alloc() / m6.total());
 
         // 7. Benchmark NextDate (10k calls)
-        Measurement m7 = measure(iterations * benchScale, threadBean, i -> oh.nextDate(start.plusHours(i % 168)));
+        Measurement m7 = measure(iterations * benchScale, threadBean, i -> oh.nextDate(hourTimeline[i % 168]));
         out.printf("7. NextDate (10k calls):                   %4.0f ms (%.5f us/op, %.1f B/op)%n",
                 m7.ms(), m7.ms() * 1000.0 / m7.total(), (double) m7.alloc() / m7.total());
 
