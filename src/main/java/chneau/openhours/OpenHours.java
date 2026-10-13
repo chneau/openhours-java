@@ -2,6 +2,7 @@ package chneau.openhours;
 
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.JsonDeserializer;
 import com.fasterxml.jackson.databind.JsonSerializer;
@@ -43,7 +44,36 @@ public final class OpenHours implements Whenable {
 
     private static final ThreadLocal<Entry> FAST_CACHE = ThreadLocal.withInitial(() -> new Entry("", EMPTY));
 
-    private record Entry(String key, OpenHours val) {}
+    private static void fastCacheSet(String trimmed, OpenHours val) {
+        FAST_CACHE.set(new Entry(trimmed, val));
+    }
+
+    /** Thread-local one-entry parse cache (the {@code Entry} is never shared across threads). */
+    private static final class Entry {
+        final String key;
+        final OpenHours val;
+        /** Lazily materialized so the plain parse path never pays for it. */
+        private char[] keyChars;
+
+        Entry(String key, OpenHours val) {
+            this.key = key;
+            this.val = val;
+        }
+
+        /**
+         * True when {@code buf[off, off+len)} equals this entry's key without allocating
+         * a {@code String}. Used by the JSON deserializer to skip the parser's text
+         * materialization on a cache hit.
+         */
+        boolean matches(char[] buf, int off, int len) {
+            char[] kc = keyChars;
+            if (kc == null) {
+                kc = key.toCharArray();
+                keyChars = kc;
+            }
+            return kc.length == len && Arrays.mismatch(buf, off, off + len, kc, 0, len) < 0;
+        }
+    }
 
     private final String raw;
     private final TimeWindow[] windows;
@@ -84,14 +114,14 @@ public final class OpenHours implements Whenable {
 
         OpenHours cached = INTERN_POOL.get(trimmed);
         if (cached != null) {
-            FAST_CACHE.set(new Entry(trimmed, cached));
+            fastCacheSet(trimmed, cached);
             return cached;
         }
 
         OpenHours created = parseUncached(trimmed);
         OpenHours prev = INTERN_POOL.putIfAbsent(trimmed, created);
         OpenHours res = (prev != null) ? prev : created;
-        FAST_CACHE.set(new Entry(trimmed, res));
+        fastCacheSet(trimmed, res);
         return res;
     }
 
@@ -313,10 +343,36 @@ public final class OpenHours implements Whenable {
         return new NextDateResult(open, nanos == 0 ? dt : dt.plusNanos(nanos));
     }
 
+    /**
+     * Memoizes the "start-of-day minute" {@code (dayOfWeek - 1) * 1440} for the last
+     * queried date. {@link LocalDate#getDayOfWeek()} recomputes the epoch day (several
+     * divisions) on every call, which dominates the cost of a query; query workloads
+     * (and anything walking a timeline) overwhelmingly hit the same calendar day many
+     * times in a row, so a single-entry cache collapses that cost to a load.
+     *
+     * <p>The key packs {@code year/month/day} as {@code ((y*32)+m)*32+d} (injective for
+     * {@code m,d < 32}) in the high bits and the day-minute base in the low 14 bits of a
+     * single {@code volatile long}, so a concurrent reader always observes a
+     * key/value pair written together (never a torn combination); a stale/mismatching
+     * key simply falls through to a recompute. The result is identical to computing
+     * {@code getDayOfWeek()} directly for every input, including negative years.
+     */
+    private static volatile long DAY_BASE_CACHE;
+
     private static int getWeekMinute(LocalDateTime dt) {
-        // Equivalent to ((dt.toEpochSecond(UTC) / 60) + 4320) mod 10080, but computed
-        // from the calendar fields directly, avoiding epoch conversion and division.
-        return (dt.getDayOfWeek().getValue() - 1) * 1440 + dt.getHour() * 60 + dt.getMinute();
+        int y = dt.getYear();
+        int m = dt.getMonthValue();
+        int d = dt.getDayOfMonth();
+        long key = ((long) y * 32 + m) * 32 + d;
+        long c = DAY_BASE_CACHE;
+        int dayBase;
+        if ((c >> 14) == key) {
+            dayBase = (int) (c & 0x3FFFL);
+        } else {
+            dayBase = (dt.getDayOfWeek().getValue() - 1) * 1440;
+            DAY_BASE_CACHE = (key << 14) | dayBase;
+        }
+        return dayBase + dt.getHour() * 60 + dt.getMinute();
     }
 
     private int findFirstWindowStartingAtOrAfter(int t) {
@@ -603,6 +659,20 @@ public final class OpenHours implements Whenable {
     public static final class Deserializer extends JsonDeserializer<OpenHours> {
         @Override
         public OpenHours deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
+            // Fast path: when the (already unescaped) textual token can be inspected in
+            // place, compare it against the thread-local parse cache without materializing
+            // a String; on a hit the parser text is exactly the cached key, so returning
+            // the cached instance is identical to `parse(getValueAsString())`.
+            if (p.currentToken() == JsonToken.VALUE_STRING && p.hasTextCharacters()) {
+                char[] buf = p.getTextCharacters();
+                int off = p.getTextOffset();
+                int len = p.getTextLength();
+                Entry e = FAST_CACHE.get();
+                if (e.matches(buf, off, len)) {
+                    return e.val;
+                }
+                return OpenHours.parse(p.getText());
+            }
             String expr = p.getValueAsString();
             return OpenHours.parse(expr);
         }
